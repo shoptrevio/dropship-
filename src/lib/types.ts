@@ -112,7 +112,7 @@ export type User = {
   // This demonstrates how a user is bucketed into an experiment.
   abTesting?: {
     // experimentName: 'control' | 'variantA' | 'variantB';
-    'new-checkout-flow': 'variantA'; 
+    'new-checkout-flow': 'variantA';
   };
 };
 
@@ -216,7 +216,50 @@ export type UXMetrics = {
 // Firestore Collection: /admin_ux_controls
 export type AdminUxControls = {
   id:string;
-  livePreview: boolean; 
+  livePreview: boolean;
   aiBannerRotation: number;
   emergencyUxOff: boolean;
+};
+
+// Represents global UI configuration for the entire application.
+// Firestore Collection: /ux_config
+export type UXConfig = {
+  id: 'global'; // Singleton document
+  themes: {
+    primaryColor: string;
+    darkMode: boolean;
+  };
+  animations: {
+    enable: boolean;
+    duration: number; // in milliseconds
+  };
+  layout: {
+    gridColumns: number;
+    mobileBreakpoint: number; // in pixels
+  };
+};
+
+// Represents a configurable UI component's style.
+// Firestore Collection: /ui_components
+export type UIComponent = {
+  id: string; // e.g., 'product_cards' or 'buttons'
+  type: 'product_cards' | 'buttons' | 'loading_states';
+  style: string;
+  variant: string; // For A/B testing or multiple styles
+  config: {
+    // Example for buttons
+    radius?: number;
+    shadow?: boolean;
+    // Example for loading states
+    skeleton?: boolean;
+  };
+};
+
+// Represents the UI preferences for a single user.
+// Firestore Collection: /user_preferences
+export type UserPreferences = {
+  id: string; // Should match the user's auth UID
+  themePreference: 'light' | 'dark' | 'system';
+  textSize: number; // e.g., 16
+  reducedMotion: boolean;
 };

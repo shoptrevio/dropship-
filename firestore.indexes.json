@@ -39,6 +39,14 @@
         "fields": [
             { "fieldPath": "role", "order": "ASCENDING" }
         ]
+    },
+    {
+      "collectionGroup": "ui_components",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "variant", "order": "ASCENDING" },
+        { "fieldPath": "style", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

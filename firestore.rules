@@ -3,82 +3,69 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-
-    // Default deny all reads and writes
-    match /{document=**} {
-      allow read, write: if false;
-    }
-
-    // Grant access based on user roles and collection specifics
-    match /products/{productId} {
-      allow read: if true; // Products are public
-      allow write: if request.auth.uid != null && (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['admin', 'staff']);
-    }
-
-    match /users/{userId} {
-      allow read: if request.auth.uid == userId || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
-      allow write: if request.auth.uid == userId; // Users can update their own data (preferences, etc.)
-    }
     
-    match /suppliers/{supplierId} {
-      allow read: if get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['admin', 'staff'];
-      allow write: if get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
-    }
-
-    match /orders/{orderId} {
-      allow read, write: if request.auth.uid == resource.data.userId || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['admin', 'staff'];
-    }
-
-    // --- UX & AI Specific Rules ---
-
-    // UI settings should be readable by all, but only writable by admins.
-    match /ui_settings/{setting} {
+    // --- UX Configuration Rules ---
+    // ux_config: Global UI settings, public read, admin write.
+    // ui_components: Defines component styles, public read, admin write.
+    match /ux_config/{docId} {
       allow read: if true;
-      allow write: if get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+      allow write: if request.auth.token.admin == true;
+    }
+    
+    match /ui_components/{componentId} {
+      allow read: if true;
+      allow write: if request.auth.token.admin == true;
+    }
+    
+    // --- User-Specific Rules ---
+    // user_preferences: Per-user settings, only the user can read/write.
+    match /user_preferences/{userId} {
+      allow read, update: if request.auth.uid == userId;
+      allow create: if request.auth.uid == userId;
     }
 
-    // Users can only write to their own UX metrics documents. Admins/staff can read them.
-    match /ux_metrics/{metricId} {
-      allow read: if get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['admin', 'staff'];
-      allow create: if request.auth.uid != null; // Any authenticated user can create a metrics doc
-    }
-
-    // Admin controls are highly restricted.
-    match /admin_ux_controls/{control} {
-      allow read, write: if get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
-    }
-    
-    // Feedback can be written by any authenticated user, but only read by admin/staff.
-    match /ai_training_feedback/{feedbackId} {
-        allow create: if request.auth.uid != null;
-        allow read: if get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['admin', 'staff'];
-    }
-    
-    // AI models can only be managed by admins.
-    match /ai_models/{modelId} {
-        allow read, write: if get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
-    }
-    
-    // Decision logs are write-only for the backend, readable by admin.
-    match /ai_decision_logs/{logId} {
-        allow read: if get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
-        // Writes should be handled by a trusted backend service/function.
-        allow write: if false; 
-    }
-
-    // Geo-targeted UX settings are admin-only.
-    match /geo_targeted_ux/{geoId} {
-        allow read, write: if get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
-    }
-    
-    // Special access for UX testers
-    // This allows read access to certain collections for a 'ux-tester' role
+    // --- Core E-Commerce Rules ---
+    // products: Publicly readable. Only admins/staff can write.
     match /products/{productId} {
-      allow read: if get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'ux-tester';
-    }
-     match /ui_settings/{setting} {
-      allow read: if get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'ux-tester';
+      allow read: if true;
+      allow write: if request.auth.token.admin == true || request.auth.token.staff == true;
     }
 
+    // orders: Users can create and read their own orders. Staff/Admins can read all.
+    match /orders/{orderId} {
+      allow create: if request.auth.uid == request.resource.data.userId;
+      allow read: if request.auth.uid == resource.data.userId || request.auth.token.admin == true || request.auth.token.staff == true;
+      allow update: if request.auth.token.admin == true || request.auth.token.staff == true;
+    }
+
+    // users: Users can read/update their own profile. Admins can read all.
+    match /users/{userId} {
+      allow read, update: if request.auth.uid == userId;
+      allow create: if request.auth.uid == userId;
+      allow list: if request.auth.token.admin == true;
+    }
+
+    // --- AI and Admin Rules ---
+    // ai_models: Read-only for the client.
+    match /ai_models/{modelId} {
+      allow read: if true;
+      allow write: if request.auth.token.admin == true;
+    }
+
+    // ai_training_feedback: Authenticated users can create feedback.
+    match /ai_training_feedback/{feedbackId} {
+      allow create: if request.auth != null;
+    }
+
+    // admin_ux_controls: Only admins can read/write.
+    match /admin_ux_controls/{controlId} {
+      allow read, write: if request.auth.token.admin == true;
+    }
+
+    // ux_metrics: Clients can write their own metrics, admins can read all.
+    match /ux_metrics/{metricId} {
+      allow create: if request.auth.uid == metricId;
+      allow read: if request.auth.token.admin == true;
+    }
   }
 }
