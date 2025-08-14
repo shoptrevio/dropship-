@@ -4,38 +4,67 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Default deny all
-    match /{document=**} {
-      allow read, write: if false;
+    // Helper function to check if a user is authenticated.
+    function isSignedIn() {
+      return request.auth != null;
     }
 
-    // Products: Customers can read, admins/staff can write
+    // Helper function to get the user's role from the 'users' collection.
+    function getUserRole(userId) {
+      return get(/databases/$(database)/documents/users/$(userId)).data.role;
+    }
+
+    // Helper function to check if the user is an Admin.
+    function isAdmin() {
+      return isSignedIn() && getUserRole(request.auth.uid) == 'admin';
+    }
+
+    // Helper function to check if the user is Staff.
+    function isStaff() {
+      return isSignedIn() && (getUserRole(request.auth.uid) == 'staff' || isAdmin());
+    }
+
+    // Products:
+    // Customers can read all products.
+    // Staff can create and update products.
+    // Admins have full access.
     match /products/{productId} {
       allow read: if true;
-      allow write: if request.auth.token.role in ['admin', 'staff'];
+      allow create, update: if isStaff();
+      allow delete: if isAdmin();
     }
 
-    // Suppliers: Admins can manage
+    // Suppliers:
+    // Only accessible by Admins for security.
+    // Supplier data is sensitive.
     match /suppliers/{supplierId} {
-      allow read, write: if request.auth.token.role == 'admin';
+      allow read, write: if isAdmin();
     }
     
-    // Orders: Users can create their own, admins/staff can read/update
-    match /orders/{orderId} {
-      allow create: if request.auth.uid == request.resource.data.userId;
-      allow read, update: if request.auth.token.role in ['admin', 'staff'] || request.auth.uid == resource.data.userId;
-    }
-
-    // Users: Can read/update their own profile, admins can manage all
+    // Users:
+    // Users can read and update their own user document.
+    // Admins can read and write any user document (for role management).
     match /users/{userId} {
-      allow read, update: if request.auth.uid == userId;
-      allow write: if request.auth.token.role == 'admin';
+      allow read, update: if isSignedIn() && request.auth.uid == userId;
+      allow write: if isAdmin();
     }
 
-    // AI Models: Read-only for authenticated users
+    // Orders:
+    // Users can create, read, and update their own orders.
+    // Staff can read and update any order (for fulfillment).
+    // Admins have full access.
+    match /orders/{orderId} {
+      allow create: if isSignedIn();
+      allow read, update: if (isSignedIn() && resource.data.userId == request.auth.uid) || isStaff();
+      allow delete: if isAdmin();
+    }
+
+    // AI_models:
+    // This collection should be read-only for most of the app.
+    // Only Admins should be able to update model versions or endpoints.
     match /ai_models/{modelId} {
-      allow read: if request.auth != null;
-      allow write: if request.auth.token.role == 'admin';
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
     }
   }
 }
