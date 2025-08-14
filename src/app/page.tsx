@@ -1,17 +1,58 @@
 import { ProductCard } from '@/components/ProductCard';
 import { products } from '@/lib/placeholder-data';
 import type { Product } from '@/lib/types';
+import { Button } from '@/components/ui/button';
+import Link from 'next/link';
+import Image from 'next/image';
+import { ArrowRight, ShoppingCart } from 'lucide-react';
 
 export default function Home() {
   return (
     <div className="bg-background">
-      <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-12">
+      {/* Hero Section */}
+      <section className="container mx-auto px-4 sm:px-6 lg:px-8 py-16">
+        <div className="grid md:grid-cols-2 gap-8 items-center">
+          <div className="text-center md:text-left">
+            <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold font-headline text-primary">
+              The Future of Shopping is Here.
+            </h1>
+            <p className="mt-4 text-lg md:text-xl text-muted-foreground max-w-xl mx-auto md:mx-0">
+              Discover unique products, personalized just for you with the power of AI. Your perfect item is just a click away.
+            </p>
+            <div className="mt-8 flex justify-center md:justify-start gap-4">
+              <Button size="lg" asChild>
+                <Link href="#products">
+                  Explore Products <ArrowRight className="ml-2 h-5 w-5" />
+                </Link>
+              </Button>
+              <Button size="lg" variant="outline" asChild>
+                <Link href="/admin/add-product">
+                  Create with AI
+                </Link>
+              </Button>
+            </div>
+          </div>
+          <div className="w-full h-full">
+            <Image
+              src="https://placehold.co/700x500.png"
+              alt="AI-powered shopping experience"
+              width={700}
+              height={500}
+              className="rounded-lg shadow-2xl object-cover"
+              data-ai-hint="futuristic shopping"
+            />
+          </div>
+        </div>
+      </section>
+
+      {/* Featured Products Section */}
+      <div id="products" className="container mx-auto px-4 sm:px-6 lg:px-8 py-12">
         <div className="text-center mb-12">
-          <h1 className="text-4xl md:text-5xl font-bold font-headline text-primary-foreground bg-primary rounded-lg py-2 px-4 inline-block shadow-lg">
-            Welcome to CommerceAI
-          </h1>
-          <p className="mt-4 text-lg md:text-xl text-muted-foreground max-w-2xl mx-auto">
-            Discover our curated collection of products. Built with the power of AI to enhance your shopping experience.
+          <h2 className="text-3xl md:text-4xl font-bold font-headline text-primary-foreground bg-primary rounded-lg py-2 px-4 inline-block shadow-lg">
+            Our Featured Products
+          </h2>
+          <p className="mt-4 text-lg text-muted-foreground max-w-2xl mx-auto">
+            Hand-picked and ready to be discovered.
           </p>
         </div>
 
