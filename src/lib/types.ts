@@ -2,7 +2,8 @@ import type { Timestamp } from 'firebase/firestore';
 
 /**
  * @fileoverview This file defines the core data structures (TypeScript types) for the application.
- * These types represent the schema for the Firestore database collections.
+ * These types represent the schema for the Firestore database collections and are designed to
+ * support a high-performance, scalable, and AI-driven user experience.
  */
 
 // Represents a single product variant (e.g., a specific color and size).
@@ -13,33 +14,38 @@ export type Variant = {
   inventory: number; // Inventory for this specific variant. Updated via atomic transactions.
 };
 
-// Represents regional pricing for a product.
+// Represents regional pricing for a product, supporting multi-currency.
 export type RegionalPrice = {
   currency: 'USD' | 'EUR' | 'GBP' | 'JPY'; // Supported currencies
   price: number;
 };
 
 // Represents a product in the store.
+// Firestore Collection: /products
 export type Product = {
   id: string; // Document ID
   name: string;
   description: string;
   price: number; // Default price in USD
-  regionalPrices?: RegionalPrice[]; // For multi-currency support
+  regionalPrices?: RegionalPrice[];
   imageUrl: string;
   category: string;
   variants: Variant[];
   supplierId?: string; // Foreign key to the 'suppliers' collection
 
   // AI-Generated Fields with schema validation required.
+  // These fields are optimized for fast reads on high-traffic pages.
   aiGeneratedContent?: {
     description: string;
-    trend_score?: number; // 0-100 score indicating trending potential
-    predicted_sales?: number; // Estimated units to be sold in next 30 days
+    trend_score?: number; // 0-100 score indicating trending potential.
+    predicted_sales?: number; // Estimated units to be sold in next 30 days.
+    visualSearchTags?: string[]; // Tags generated from image analysis for visual search.
+    priceHistory?: Record<string, number>; // e.g. { "2023-10-26T10:00:00Z": 19.99 }
   };
 };
 
 // Represents a supplier or vendor.
+// Firestore Collection: /suppliers
 export type Supplier = {
   id: string; // Document ID
   name: string;
@@ -64,6 +70,7 @@ export type CartItem = {
 };
 
 // Represents a customer's order.
+// Firestore Collection: /orders
 export type Order = {
   id: string; // Document ID
   userId: string; // Foreign key to the 'users' collection
@@ -80,7 +87,7 @@ export type Order = {
     carrier: string;
     trackingNumber: string;
   };
-  createdAt: Timestamp;
+  createdAt: Timestamp; // Changed from Date to support Firestore Timestamps directly.
 
   // AI-Generated Fields with schema validation required.
   ai_risk_assessment?: {
@@ -91,23 +98,38 @@ export type Order = {
 };
 
 // Represents a user of the application.
+// Firestore Collection: /users
 export type User = {
   id: string; // Document ID (matches Firebase Auth UID)
   email: string;
-  role: 'admin' | 'staff' | 'customer';
+  role: 'admin' | 'staff' | 'customer' | 'ux-tester'; // Added 'ux-tester' role
+  preferences?: {
+    theme?: 'light' | 'dark' | 'system';
+    language?: string;
+  };
+  // Buckets for A/B testing different UX features.
+  abTesting?: {
+    [experimentName: string]: 'control' | 'variantA' | 'variantB';
+  };
 };
 
 // Represents a versioned AI model used in the platform.
+// This structure supports gradual rollouts and staging environments.
+// Firestore Collection: /ai_models
 export type AIModel = {
-  id: string; // Document ID
-  name: string; // e.g., 'product-description-generator'
-  version: string; // e.g., 'v2.1.0-staging', 'v2.1.0-prod'
-  environment: 'staging' | 'production';
+  id: string; // Document ID, e.g., 'product-description-generator'
+  name: string;
+  version: string; // e.g., 'v2.1.0'
   description: string;
-  endpoint: string; // URL for the model's API (e.g., a webhook)
+  endpoint: string; // URL for the model's API
+  // Environment for deploying models without affecting production.
+  environment: 'staging' | 'production';
+  // Percentage of users this model is active for, enabling gradual rollouts.
+  rolloutPercentage?: number; // 0-100
 };
 
 // Represents feedback on AI-generated content to be used for retraining.
+// Firestore Collection: /ai_training_feedback
 export type AITrainingFeedback = {
   id: string;
   modelId: string; // Foreign key to AI_models collection
@@ -119,12 +141,27 @@ export type AITrainingFeedback = {
 };
 
 // Represents a log entry for a decision made by an AI model.
+// This collection is crucial for debugging, monitoring, and ensuring transparency.
+// Firestore Collection: /ai_decision_logs
 export type AIDecisionLog = {
   id: string;
-  modelId: string;
-  sourceId: string;
+  modelId: string; // Which model made the decision
+  sourceId: string; // Which document was affected (e.g., product or order ID)
   input: any; // The data the model received
   output: any; // The decision the model made
   timestamp: Timestamp;
-  decisionTree?: any; // A representation of the decision path
+  decisionTree?: any; // A representation of the decision path for explainability
+  // Flag to identify logs that directly influenced the user interface.
+  isUiAffecting: boolean;
 };
+
+// Represents a geo-targeted UX variation.
+// Firestore Collection: /geo_targeted_ux
+export type GeoTargetedUX = {
+    id: string; // e.g. "US" or "EMEA"
+    countryCodes: string[]; // e.g. ["US", "CA"]
+    uxConfig: {
+        bannerMessage?: string;
+        featuredProductIds?: string[];
+    }
+}

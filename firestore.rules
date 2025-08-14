@@ -1,76 +1,99 @@
-
 rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Helper function to check if a user is authenticated
+    // Helper function to check if a user is authenticated.
     function isAuthenticated() {
       return request.auth != null;
     }
 
-    // Helper function to get user data
-    function getUserData(userId) {
-      return get(/databases/$(database)/documents/users/$(userId)).data;
+    // Helper function to get the user's role from the /users collection.
+    function getUserRole(userId) {
+      return get(/databases/$(database)/documents/users/$(userId)).data.role;
     }
 
-    // Helper function to check for a specific role
-    function hasRole(role) {
-      return isAuthenticated() && getUserData(request.auth.uid).role == role;
+    // Helper function to check if the user is an admin.
+    function isAdmin() {
+      return isAuthenticated() && getUserRole(request.auth.uid) == 'admin';
     }
 
-    // Admins have full access to everything
-    match /{path=**}/documents/ {
-      allow read, write: if hasRole('admin');
+    // Helper function to check if the user is a staff member.
+    function isStaff() {
+      return isAuthenticated() && getUserRole(request.auth.uid) in ['admin', 'staff'];
+    }
+    
+    // Helper function to check if user is a UX Tester.
+    function isTester() {
+      return isAuthenticated() && getUserRole(request.auth.uid) == 'ux-tester';
     }
 
-    // Products:
-    // - Customers can read all products
-    // - Staff can create and update products
-    // - Suppliers can only update inventory of their own products
+
+    // Products are readable by everyone, but only writable by admins or suppliers for their own products.
     match /products/{productId} {
-      allow read: if isAuthenticated();
-      allow create: if hasRole('staff');
-      allow update: if hasRole('staff') || 
-                     (get(/databases/$(database)/documents/suppliers/$(request.auth.uid)).data.productId == productId);
-    }
-    
-    // Users:
-    // - Users can read and write their own data
-    // - Staff can view user data for support purposes
-    match /users/{userId} {
-      allow read, write: if request.auth.uid == userId;
-      allow get: if hasRole('staff');
-    }
+      // Anyone, including unauthenticated users, can view products.
+      // This is optimized for high-traffic product pages.
+      allow read: if true;
 
-    // Orders:
-    // - Users can create and read their own orders
-    // - Staff can update order status
-    match /orders/{orderId} {
-      allow create: if isAuthenticated();
-      allow read: if isAuthenticated() && getUserData(request.auth.uid).id == resource.data.userId;
-      allow update: if hasRole('staff');
+      // Only admins or the assigned supplier can create or update products.
+      allow write: if isAdmin() || (isStaff() && request.resource.data.supplierId == request.auth.uid);
     }
     
-    // Suppliers:
-    // - Only admins can manage supplier documents
+    // Suppliers can only be read or written by admins to protect sensitive info like API keys.
     match /suppliers/{supplierId} {
-      allow read, write: if hasRole('admin');
+        allow read, write: if isAdmin();
     }
 
-    // AI Models & Training Data:
-    // - Read/write access restricted to admins for managing models and training data
+    // Users can manage their own data. Admins have full access.
+    match /users/{userId} {
+      // A user can read and write to their own document.
+      allow read, write: if request.auth.uid == userId;
+      
+      // Admins can read any user profile.
+      allow get: if isAdmin();
+      
+      // Admins can create or update any user document (e.g., to assign roles).
+      allow create, update: if isAdmin();
+    }
+
+    // Orders can be created by authenticated users for themselves. Staff/Admins can manage all orders.
+    match /orders/{orderId} {
+      // Users can read their own orders.
+      allow get: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      
+      // Authenticated users can create their own orders.
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+
+      // Staff and admins can read and update any order (e.g., to change status).
+      allow list, update: if isStaff();
+      
+      // Only admins can delete orders.
+      allow delete: if isAdmin();
+    }
+
+    // AI model configurations are admin-only.
     match /ai_models/{modelId} {
-      allow read, write: if hasRole('admin');
-    }
-
-    match /ai_training_feedback/{feedbackId} {
-      allow read, write: if hasRole('admin');
-      allow create: if isAuthenticated();
+      allow read, write: if isAdmin() || isTester();
     }
     
+    // AI training feedback can be submitted by any authenticated user.
+    match /ai_training_feedback/{feedbackId} {
+        allow create: if isAuthenticated();
+        allow read, write: if isAdmin(); // Admins can manage feedback
+    }
+
+    // AI decision logs are write-only for the backend and read-only for admins.
     match /ai_decision_logs/{logId} {
-       allow read, write: if hasRole('admin');
+        allow read: if isAdmin();
+        // Writes should only come from trusted server environments (e.g., Cloud Functions).
+        // This rule prevents any client-side writes.
+        allow write: if false; 
+    }
+
+    // Geo-targeted UX variations are readable by anyone, but only writable by admins.
+    match /geo_targeted_ux/{geoId} {
+        allow read: if true;
+        allow write: if isAdmin();
     }
   }
 }

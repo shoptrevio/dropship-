@@ -13,8 +13,8 @@
       "collectionGroup": "products",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "trend_score", "order": "DESCENDING" },
-        { "fieldPath": "predicted_sales", "order": "DESCENDING" }
+        { "fieldPath": "aiGeneratedContent.trend_score", "order": "DESCENDING" },
+        { "fieldPath": "aiGeneratedContent.predicted_sales", "order": "DESCENDING" }
       ]
     },
     {
