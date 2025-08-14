@@ -1,3 +1,4 @@
+
 import type { Timestamp } from 'firebase/firestore';
 
 /**
@@ -107,9 +108,11 @@ export type User = {
     theme?: 'light' | 'dark' | 'system';
     language?: string;
   };
-  // Buckets for A/B testing different UX features.
+  // Example of A/B test configuration for a user.
+  // This demonstrates how a user is bucketed into an experiment.
   abTesting?: {
-    [experimentName: string]: 'control' | 'variantA' | 'variantB';
+    // experimentName: 'control' | 'variantA' | 'variantB';
+    'new-checkout-flow': 'variantA'; 
   };
 };
 
@@ -176,8 +179,10 @@ export type UISettings = {
     lightColors: { primary: string; accent: string; };
     darkColors: { primary: string; accent: string; };
   };
+  // Example of animation performance metrics configuration.
+  // This demonstrates how animation timings could be controlled from the backend.
   animationPresets: {
-    loadDuration: number; // in ms
+    loadDuration: number; // in ms, e.g., 300
     transitionCurve: 'ease-in' | 'ease-out' | 'ease-in-out';
   };
   layoutTemplates: {
@@ -210,8 +215,8 @@ export type UXMetrics = {
 // Represents global admin controls for real-time UX adjustments.
 // Firestore Collection: /admin_ux_controls
 export type AdminUxControls = {
-  id: string; // e.g., 'global'
-  livePreview: boolean; // Toggles UI experiments for admins to see them live.
-  aiBannerRotation: number; // Seconds between hero banner changes.
-  emergencyUxOff: boolean; // A kill switch to disable complex animations and features.
+  id:string;
+  livePreview: boolean; 
+  aiBannerRotation: number;
+  emergencyUxOff: boolean;
 };
