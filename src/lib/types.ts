@@ -1,3 +1,4 @@
+import type { Timestamp } from 'firebase/firestore';
 
 /**
  * @fileoverview This file defines the core data structures (TypeScript types) for the application.
@@ -79,7 +80,7 @@ export type Order = {
     carrier: string;
     trackingNumber: string;
   };
-  createdAt: Date;
+  createdAt: Timestamp;
 
   // AI-Generated Fields with schema validation required.
   ai_risk_assessment?: {
@@ -114,7 +115,7 @@ export type AITrainingFeedback = {
   userId: string; // User who provided feedback
   rating: 1 | 2 | 3 | 4 | 5;
   comment?: string;
-  createdAt: Date;
+  createdAt: Timestamp;
 };
 
 // Represents a log entry for a decision made by an AI model.
@@ -124,6 +125,6 @@ export type AIDecisionLog = {
   sourceId: string;
   input: any; // The data the model received
   output: any; // The decision the model made
-  timestamp: Date;
+  timestamp: Timestamp;
   decisionTree?: any; // A representation of the decision path
 };

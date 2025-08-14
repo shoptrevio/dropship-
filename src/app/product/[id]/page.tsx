@@ -16,7 +16,6 @@ export default function ProductDetailPage({ params }: { params: { id: string } }
   const { toast } = useToast();
   const product = products.find((p) => p.id === params.id);
   
-  // Find the first variant that is in stock
   const firstAvailableVariant = product?.variants.find(v => v.inventory > 0);
   const [selectedVariantId, setSelectedVariantId] = useState<string | null>(
     firstAvailableVariant?.id || product?.variants[0]?.id || null
@@ -85,7 +84,7 @@ export default function ProductDetailPage({ params }: { params: { id: string } }
                   <RadioGroup 
                     value={selectedVariant?.color} 
                     onValueChange={(color) => {
-                      const variant = product.variants.find(v => v.color === color && v.size === selectedVariant?.size) || product.variants.find(v => v.color === color);
+                      const variant = product.variants.find(v => v.color === color && v.inventory > 0) || product.variants.find(v => v.color === color);
                       if(variant) setSelectedVariantId(variant.id);
                   }}>
                     <div className="flex flex-wrap gap-2">
@@ -108,7 +107,7 @@ export default function ProductDetailPage({ params }: { params: { id: string } }
                   <RadioGroup 
                     value={selectedVariant?.size} 
                     onValueChange={(size) => {
-                      const variant = product.variants.find(v => v.size === size && v.color === selectedVariant?.color) || product.variants.find(v => v.size === size);
+                      const variant = product.variants.find(v => v.size === size && v.inventory > 0) || product.variants.find(v => v.size === size);
                       if(variant) setSelectedVariantId(variant.id);
                   }}>
                     <div className="flex flex-wrap gap-2">
