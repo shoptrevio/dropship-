@@ -1,87 +1,14 @@
 rules_version = '2';
-
 service cloud.firestore {
   match /databases/{database}/documents {
-
-    // Helper function to check if a user has a specific role.
-    function isRole(role) {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == role;
+    // Allow UI to read all public collections
+    match /{collection}/{document} {
+      allow read: if collection in ['products', 'ui_settings'];
     }
 
-    // Helper function to check if a user is an admin or a UX tester.
-    function isAdminOrTester() {
-      let userRole = get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
-      return userRole == 'admin' || userRole == 'ux-tester';
-    }
-
-    // Products: Customers can read. Admins can do anything.
-    match /products/{productId} {
-      allow read: if true;
-      allow write: if isRole('admin');
-    }
-
-    // Suppliers: Only admins can read/write supplier data.
-    // Future rule: Allow suppliers to manage their own data.
-    match /suppliers/{supplierId} {
-      allow read, write: if isRole('admin');
-    }
-    
-    // Orders: Users can create and read/update their own orders. Admins can read/write all orders.
-    match /orders/{orderId} {
-      allow create: if request.auth != null;
-      allow read, update: if request.auth.uid == resource.data.userId || isRole('admin');
-      allow delete: if isRole('admin');
-    }
-
-    // Users: Users can read/write their own data. Admins can read/write all user data.
-    // The 'ux-tester' role has special read access for testing purposes.
-    match /users/{userId} {
-      allow read, write: if request.auth.uid == userId || isRole('admin');
-      allow list: if isAdminOrTester();
-    }
-    
-    // AI Models: Read-only for clients to prevent tampering. Writable only by admins.
-    match /ai_models/{modelId} {
-      allow read: if request.auth != null;
-      allow write: if isRole('admin');
-    }
-
-    // AI Training Feedback: Authenticated users can provide feedback. Admins can manage all feedback.
-    match /ai_training_feedback/{feedbackId} {
-      allow create: if request.auth != null;
-      allow read, update, delete: if isRole('admin');
-    }
-
-    // AI Decision Logs: Write-only for backend services (via admin SDK). Read-only for admins.
-    // This prevents clients from creating or altering logs.
-    match /ai_decision_logs/{logId} {
-      allow read: if isRole('admin');
-      allow write: if false; // Should only be written from a trusted server environment.
-    }
-    
-    // Geo-Targeted UX: Read-only for clients, writable only by admins.
-    match /geo_targeted_ux/{geoId} {
-        allow read: if true;
-        allow write: if isRole('admin');
-    }
-
-    // UI Settings: Globally readable, but only writable by admins to control frontend behavior.
-    match /ui_settings/{settingId} {
-      allow read: if true;
-      allow write: if isRole('admin');
-    }
-
-    // UX Metrics: Clients can create new metrics documents, but cannot read or update them.
-    // This allows for secure collection of analytics data. Admins can read all metrics.
-    match /ux_metrics/{metricId} {
-      allow create: if request.auth != null;
-      allow read, update, delete: if isRole('admin');
-
-      // Heatmap subcollection: Clients can add heatmap data points.
-      match /clickHeatmaps/{datapointId} {
-        allow create: if request.auth != null;
-        allow read, update, delete: if isRole('admin');
-      }
+    // Protect UX metrics writes
+    match /ux_metrics/{userId} {
+      allow write: if request.auth.uid == userId;
     }
   }
 }
