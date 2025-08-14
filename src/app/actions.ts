@@ -31,6 +31,7 @@ export async function handleGenerateDescription(formData: FormData) {
     const result = await generateProductDescription(validatedFields.data);
     return { description: result.description };
   } catch (e) {
+    console.error(e);
     return { error: 'Failed to generate description. Please try again.' };
   }
 }
@@ -52,6 +53,7 @@ export async function handleChatMessage(message: string) {
     const result = await customerSupportChat({ query: validatedMessage.data.query });
     return { response: result.response };
   } catch (e) {
+    console.error(e);
     return { error: 'Sorry, I am unable to respond right now. Please try again later.' };
   }
 }

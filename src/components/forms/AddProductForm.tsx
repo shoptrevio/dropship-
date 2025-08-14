@@ -44,11 +44,9 @@ export function AddProductForm() {
     },
   });
 
-  const handleGenerate = () => {
-    const values = form.getValues();
-    const result = formSchema.safeParse(values);
-    if (!result.success) {
-      form.trigger();
+  const handleGenerate = async () => {
+    const isValid = await form.trigger();
+    if (!isValid) {
       toast({
         title: 'Please fill out all fields',
         description: 'We need all the details to generate a great description.',
@@ -57,6 +55,7 @@ export function AddProductForm() {
       return;
     }
 
+    const values = form.getValues();
     startTransition(async () => {
       const formData = new FormData();
       Object.entries(values).forEach(([key, value]) => {
