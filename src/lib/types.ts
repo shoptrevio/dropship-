@@ -169,49 +169,6 @@ export type GeoTargetedUX = {
     }
 }
 
-
-// Represents global UI settings controlled from the backend.
-// Firestore Collection: /ui_settings
-export type UISettings = {
-  id: string; // e.g., 'global'
-  themeConfig: {
-    darkMode: boolean;
-    lightColors: { primary: string; accent: string; };
-    darkColors: { primary: string; accent: string; };
-  };
-  // Example of animation performance metrics configuration.
-  // This demonstrates how animation timings could be controlled from the backend.
-  animationPresets: {
-    loadDuration: number; // in ms, e.g., 300
-    transitionCurve: 'ease-in' | 'ease-out' | 'ease-in-out';
-  };
-  layoutTemplates: {
-    mobileBreakpoint: number; // in pixels
-    desktopBreakpoint: number; // in pixels
-  };
-};
-
-// Represents a single point in a heatmap.
-// Firestore Sub-collection: /ux_metrics/{metricId}/clickHeatmaps
-export type HeatmapDatapoint = {
-  id: string;
-  x: number;
-  y: number;
-  timestamp: Timestamp;
-};
-
-
-// Represents collected user experience metrics for analytics.
-// Firestore Collection: /ux_metrics
-export type UXMetrics = {
-  id: string; // e.g., page URL or user ID
-  pageUrl: string;
-  userId?: string;
-  scrollDepth: number; // Percentage
-  aiPersonalizationScore: number; // 0-100 engagement rating
-  recordedAt: Timestamp;
-};
-
 // Represents global admin controls for real-time UX adjustments.
 // Firestore Collection: /admin_ux_controls
 export type AdminUxControls = {
@@ -262,4 +219,15 @@ export type UserPreferences = {
   themePreference: 'light' | 'dark' | 'system';
   textSize: number; // e.g., 16
   reducedMotion: boolean;
+};
+
+// Represents collected user experience metrics for analytics.
+// Firestore Collection: /ux_metrics
+export type UXMetrics = {
+  id: string; // e.g., page URL or user ID
+  pageUrl: string;
+  userId?: string;
+  scrollDepth: number; // Percentage
+  aiPersonalizationScore: number; // 0-100 engagement rating
+  recordedAt: Timestamp;
 };

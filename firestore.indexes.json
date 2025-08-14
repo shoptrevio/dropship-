@@ -34,11 +34,11 @@
       ]
     },
     {
-        "collectionGroup": "users",
-        "queryScope": "COLLECTION",
-        "fields": [
-            { "fieldPath": "role", "order": "ASCENDING" }
-        ]
+      "collectionGroup": "users",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "role", "order": "ASCENDING" }
+      ]
     },
     {
       "collectionGroup": "ui_components",
