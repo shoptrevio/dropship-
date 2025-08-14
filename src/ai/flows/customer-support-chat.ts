@@ -43,9 +43,7 @@ const prompt = ai.definePrompt({
   Here are the details of the product in question, if available: {{{productDetails}}}
 
   Customer Query: {{{query}}}
-  `, config: {
-    model: 'models/chat-bison-001',
-  }
+  `,
 });
 
 const customerSupportChatFlow = ai.defineFlow(
