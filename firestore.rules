@@ -1,71 +1,66 @@
 
 rules_version = '2';
-
 service cloud.firestore {
   match /databases/{database}/documents {
-    
-    // --- UX Configuration Rules ---
-    // ux_config: Global UI settings, public read, admin write.
-    // ui_components: Defines component styles, public read, admin write.
+    // PUBLIC ACCESS RULES
+    // Public collections readable by anyone, but writable only by admins.
+    match /products/{productId} {
+      allow read: if true;
+      allow write: if request.auth.token.admin == true;
+    }
     match /ux_config/{docId} {
       allow read: if true;
       allow write: if request.auth.token.admin == true;
     }
-    
-    match /ui_components/{componentId} {
+     match /ui_components/{docId} {
       allow read: if true;
       allow write: if request.auth.token.admin == true;
     }
-    
-    // --- User-Specific Rules ---
-    // user_preferences: Per-user settings, only the user can read/write.
-    match /user_preferences/{userId} {
-      allow read, update: if request.auth.uid == userId;
-      allow create: if request.auth.uid == userId;
-    }
-
-    // --- Core E-Commerce Rules ---
-    // products: Publicly readable. Only admins/staff can write.
-    match /products/{productId} {
+    match /ui_settings/{docId} {
       allow read: if true;
-      allow write: if request.auth.token.admin == true || request.auth.token.staff == true;
+      allow write: if request.auth.token.admin == true;
+    }
+    match /geo_targeted_ux/{docId} {
+        allow read: if true;
+        allow write: if request.auth.token.admin == true;
     }
 
-    // orders: Users can create and read their own orders. Staff/Admins can read all.
-    match /orders/{orderId} {
-      allow create: if request.auth.uid == request.resource.data.userId;
-      allow read: if request.auth.uid == resource.data.userId || request.auth.token.admin == true || request.auth.token.staff == true;
-      allow update: if request.auth.token.admin == true || request.auth.token.staff == true;
-    }
-
-    // users: Users can read/update their own profile. Admins can read all.
+    // USER-SPECIFIC RULES
+    // Users can read/write their own data, but not others'.
     match /users/{userId} {
-      allow read, update: if request.auth.uid == userId;
-      allow create: if request.auth.uid == userId;
-      allow list: if request.auth.token.admin == true;
+      allow read, write: if request.auth.uid == userId;
+    }
+    match /user_preferences/{userId} {
+        allow read, update: if request.auth.uid == userId;
+        allow create: if request.auth != null;
+    }
+    match /orders/{orderId} {
+      allow read, write: if request.auth.uid == resource.data.userId;
+    }
+    
+    // UX METRICS
+    // Allow clients to write their own metrics. Admins can read all metrics.
+    match /ux_metrics/{metricId} {
+        allow write: if request.auth.uid == metricId;
+        allow read: if request.auth.token.admin == true;
     }
 
-    // --- AI and Admin Rules ---
-    // ai_models: Read-only for the client.
-    match /ai_models/{modelId} {
-      allow read: if true;
-      allow write: if request.auth.token.admin == true;
-    }
-
-    // ai_training_feedback: Authenticated users can create feedback.
-    match /ai_training_feedback/{feedbackId} {
-      allow create: if request.auth != null;
-    }
-
-    // admin_ux_controls: Only admins can read/write.
-    match /admin_ux_controls/{controlId} {
+    // ADMIN-ONLY RULES
+    // Collections that are only readable/writable by admins.
+    match /suppliers/{supplierId} {
       allow read, write: if request.auth.token.admin == true;
     }
-
-    // ux_metrics: Clients can write their own metrics, admins can read all.
-    match /ux_metrics/{metricId} {
-      allow create: if request.auth.uid == metricId;
-      allow read: if request.auth.token.admin == true;
+    match /ai_models/{modelId} {
+      allow read, write: if request.auth.token.admin == true;
+    }
+    match /ai_training_feedback/{feedbackId} {
+      allow read, write: if request.auth.token.admin == true;
+    }
+    match /ai_decision_logs/{logId} {
+      allow read, write: if request.auth.token.admin == true;
+    }
+    match /admin_ux_controls/{controlId} {
+        allow read, write: if request.auth.token.admin == true;
     }
   }
 }
