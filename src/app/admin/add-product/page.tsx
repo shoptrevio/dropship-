@@ -19,15 +19,13 @@ export default function AddProductPage() {
           <CardHeader>
             <div className="flex items-center gap-3">
               <Bot className="h-8 w-8 text-primary" />
-              <div>
-                <CardTitle className="font-headline text-2xl">
-                  AI-Powered Product Creation
-                </CardTitle>
-                <CardDescription>
-                  Fill in the details below and let our AI generate a compelling product description for you.
-                </CardDescription>
-              </div>
+              <CardTitle className="font-headline text-2xl">
+                AI-Powered Product Creation
+              </CardTitle>
             </div>
+            <CardDescription>
+              Fill in the details below and let our AI generate a compelling product description for you.
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <AddProductForm />

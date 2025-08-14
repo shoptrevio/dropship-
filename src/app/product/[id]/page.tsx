@@ -15,8 +15,11 @@ import { useToast } from '@/hooks/use-toast';
 export default function ProductDetailPage({ params }: { params: { id: string } }) {
   const { toast } = useToast();
   const product = products.find((p) => p.id === params.id);
+  
+  // Find the first variant that is in stock
+  const firstAvailableVariant = product?.variants.find(v => v.inventory > 0);
   const [selectedVariantId, setSelectedVariantId] = useState<string | null>(
-    product?.variants[0]?.id || null
+    firstAvailableVariant?.id || product?.variants[0]?.id || null
   );
 
   if (!product) {
@@ -79,18 +82,20 @@ export default function ProductDetailPage({ params }: { params: { id: string } }
               {uniqueColors.length > 0 && (
                 <div>
                   <h3 className="font-semibold mb-2">Color</h3>
-                  <RadioGroup defaultValue={product.variants.find(v => v.id === selectedVariantId)?.color} onValueChange={(color) => {
-                      const variant = product.variants.find(v => v.color === color);
+                  <RadioGroup 
+                    value={selectedVariant?.color} 
+                    onValueChange={(color) => {
+                      const variant = product.variants.find(v => v.color === color && v.size === selectedVariant?.size) || product.variants.find(v => v.color === color);
                       if(variant) setSelectedVariantId(variant.id);
                   }}>
                     <div className="flex flex-wrap gap-2">
                       {uniqueColors.map((color) => (
-                        <RadioGroupItem key={color} value={color} id={`color-${color}`} className="sr-only"/>
-                      ))}
-                      {uniqueColors.map((color) => (
-                          <Label key={color} htmlFor={`color-${color}`} className={cn("px-4 py-2 rounded-md border cursor-pointer", product.variants.find(v => v.id === selectedVariantId)?.color === color ? 'bg-primary text-primary-foreground border-primary' : 'bg-card')}>
+                        <div key={color}>
+                          <RadioGroupItem value={color} id={`color-${color}`} className="sr-only"/>
+                          <Label htmlFor={`color-${color}`} className={cn("px-4 py-2 rounded-md border cursor-pointer", selectedVariant?.color === color ? 'bg-primary text-primary-foreground border-primary' : 'bg-card')}>
                             {color}
                           </Label>
+                        </div>
                       ))}
                     </div>
                   </RadioGroup>
@@ -100,18 +105,20 @@ export default function ProductDetailPage({ params }: { params: { id: string } }
               {uniqueSizes.length > 0 && (
                  <div>
                   <h3 className="font-semibold mb-2">Size</h3>
-                  <RadioGroup defaultValue={product.variants.find(v => v.id === selectedVariantId)?.size} onValueChange={(size) => {
-                      const variant = product.variants.find(v => v.size === size);
+                  <RadioGroup 
+                    value={selectedVariant?.size} 
+                    onValueChange={(size) => {
+                      const variant = product.variants.find(v => v.size === size && v.color === selectedVariant?.color) || product.variants.find(v => v.size === size);
                       if(variant) setSelectedVariantId(variant.id);
                   }}>
                     <div className="flex flex-wrap gap-2">
-                       {uniqueSizes.map((size) => (
-                         <RadioGroupItem key={size} value={size} id={`size-${size}`} className="sr-only"/>
-                      ))}
                       {uniqueSizes.map((size) => (
-                          <Label key={size} htmlFor={`size-${size}`} className={cn("px-4 py-2 rounded-md border cursor-pointer", product.variants.find(v => v.id === selectedVariantId)?.size === size ? 'bg-primary text-primary-foreground border-primary' : 'bg-card')}>
+                        <div key={size}>
+                          <RadioGroupItem value={size} id={`size-${size}`} className="sr-only"/>
+                          <Label htmlFor={`size-${size}`} className={cn("px-4 py-2 rounded-md border cursor-pointer", selectedVariant?.size === size ? 'bg-primary text-primary-foreground border-primary' : 'bg-card')}>
                             {size}
                           </Label>
+                        </div>
                       ))}
                     </div>
                   </RadioGroup>
