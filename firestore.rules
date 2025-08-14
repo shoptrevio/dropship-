@@ -1,14 +1,73 @@
 rules_version = '2';
+
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Allow UI to read all public collections
-    match /{collection}/{document} {
-      allow read: if collection in ['products', 'ui_settings'];
+    
+    // Helper function to check if a user has a specific role.
+    function isRole(role) {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == role;
+    }
+    
+    // Admins have full access to everything.
+    match /{document=**} {
+      allow read, write: if isRole('admin');
     }
 
-    // Protect UX metrics writes
-    match /ux_metrics/{userId} {
-      allow write: if request.auth.uid == userId;
+    // Rules for products
+    match /products/{productId} {
+      allow read: if true;
+      allow write: if isRole('staff') || isRole('admin');
+    }
+
+    // Rules for user-specific data
+    match /users/{userId} {
+      allow read, write: if request.auth.uid == userId;
+      allow read: if isRole('admin') || isRole('staff');
+    }
+    
+    // Rules for orders
+    match /orders/{orderId} {
+      allow read, write: if request.auth.uid == get(/databases/$(database)/documents/orders/$(orderId)).data.userId;
+      allow read, write: if isRole('admin') || isRole('staff');
+    }
+
+    // Rules for AI training feedback
+    match /ai_training_feedback/{feedbackId} {
+        allow read, write: if request.auth != null; // Allow any authenticated user to submit feedback
+        allow read, write: if isRole('admin') || isRole('staff');
+    }
+
+    // AI models can only be managed by admins.
+    match /ai_models/{modelId} {
+        allow read, write: if isRole('admin');
+    }
+
+    // AI decision logs are read-only for staff, full access for admins.
+    match /ai_decision_logs/{logId} {
+        allow read: if isRole('staff') || isRole('admin');
+        allow write: if isRole('admin');
+    }
+
+    // Geo-targeted UX settings managed by admins
+    match /geo_targeted_ux/{settingId} {
+      allow read, write: if isRole('admin');
+    }
+
+    // Global UI settings are readable by anyone, but only writable by admins.
+    match /ui_settings/{settingId} {
+      allow read: if true;
+      allow write: if isRole('admin');
+    }
+
+    // UX metrics can be written by the application, but only read by staff/admins.
+    match /ux_metrics/{metricId} {
+      allow write: if true; // Typically written by a backend service
+      allow read: if isRole('admin') || isRole('staff');
+    }
+
+    // Admin UX Controls are only accessible by admins
+    match /admin_ux_controls/{controlId} {
+      allow read, write: if isRole('admin');
     }
   }
 }

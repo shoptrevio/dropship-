@@ -206,3 +206,12 @@ export type UXMetrics = {
   aiPersonalizationScore: number; // 0-100 engagement rating
   recordedAt: Timestamp;
 };
+
+// Represents global admin controls for real-time UX adjustments.
+// Firestore Collection: /admin_ux_controls
+export type AdminUxControls = {
+  id: string; // e.g., 'global'
+  livePreview: boolean; // Toggles UI experiments for admins to see them live.
+  aiBannerRotation: number; // Seconds between hero banner changes.
+  emergencyUxOff: boolean; // A kill switch to disable complex animations and features.
+};
