@@ -28,10 +28,10 @@ export type Product = {
   imageUrl: string;
   category: string;
   variants: Variant[];
-  supplierId: string; // Foreign key to the 'suppliers' collection
+  supplierId?: string; // Foreign key to the 'suppliers' collection
 
   // AI-Generated Fields with schema validation required.
-  aiGeneratedContent: {
+  aiGeneratedContent?: {
     description: string;
     trend_score?: number; // 0-100 score indicating trending potential
     predicted_sales?: number; // Estimated units to be sold in next 30 days
