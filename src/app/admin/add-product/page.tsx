@@ -1,12 +1,21 @@
 import { AddProductForm } from '@/components/forms/AddProductForm';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Bot } from 'lucide-react';
+import Image from 'next/image';
 
 export default function AddProductPage() {
   return (
     <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-12">
       <div className="max-w-3xl mx-auto">
-        <Card className="shadow-lg">
+        <Card className="shadow-lg overflow-hidden">
+          <Image
+            src="https://placehold.co/800x300.png"
+            alt="AI product creation banner"
+            width={800}
+            height={300}
+            className="w-full object-cover"
+            data-ai-hint="ai product"
+          />
           <CardHeader>
             <div className="flex items-center gap-3">
               <Bot className="h-8 w-8 text-primary" />
