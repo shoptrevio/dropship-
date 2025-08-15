@@ -1,8 +1,79 @@
+
 import * as admin from 'firebase-admin';
 import * as functions from 'firebase-functions';
+import fetch from 'node-fetch';
 
 admin.initializeApp();
 const db = admin.firestore();
+
+/**
+ * A Firebase Function that triggers when a new user signs up.
+ * It adds their email to a 'subscribers' collection and sends a welcome email.
+ */
+exports.subscribeUserAndSendWelcomeEmail = functions.auth.user().onCreate(async (user) => {
+  const { email, uid } = user;
+
+  if (!email) {
+    console.error(`User ${uid} has no email address.`);
+    return null;
+  }
+
+  // 1. Add user's email to the 'subscribers' collection
+  try {
+    await db.collection('subscribers').doc(uid).set({
+      email: email,
+      subscribedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+    console.log(`Successfully added ${email} to subscribers list.`);
+  } catch (error) {
+    console.error(`Failed to add user ${uid} to subscribers list:`, error);
+    // Even if this fails, we can still try to send the email
+  }
+
+  // 2. Send a welcome email using a third-party service (e.g., SendGrid)
+  // IMPORTANT: Replace with your actual email service provider's details and API key.
+  // Store your API key securely in environment configuration, not in the code.
+  // For example: `firebase functions:config:set sendgrid.key="YOUR_API_KEY"`
+  const apiKey = functions.config().sendgrid?.key;
+  if (!apiKey) {
+    console.error('SendGrid API key not configured. Skipping welcome email.');
+    return null;
+  }
+
+  const emailData = {
+    personalizations: [{ to: [{ email: email }] }],
+    from: { email: 'welcome@your-app-name.com' }, // Use a verified sender email
+    subject: 'Welcome to CommerceAI!',
+    content: [{
+      type: 'text/html',
+      value: '<h1>Welcome!</h1><p>Thanks for signing up. We\'re excited to have you on board.</p>',
+    }],
+  };
+
+  try {
+    const response = await fetch('https://api.sendgrid.com/v3/mail/send', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(emailData),
+    });
+
+    if (response.ok) {
+      console.log(`Welcome email sent successfully to ${email}.`);
+    } else {
+      const errorBody = await response.json();
+      console.error(`Failed to send welcome email to ${email}. Status: ${response.status}`, errorBody);
+    }
+  } catch (error) {
+    console.error('Error sending welcome email:', error);
+    throw new functions.https.HttpsError('internal', 'Failed to send welcome email.');
+  }
+
+  return null;
+});
+
 
 /**
  * A Firebase Function that runs on a schedule (e.g., once a day)
