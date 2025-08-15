@@ -12,9 +12,9 @@ import { cn } from '@/lib/utils';
 import { ShoppingCart } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
-export default function ProductDetailPage({ params }: { params: { id: string } }) {
+export default function ProductDetailPage({ params: { id } }: { params: { id: string } }) {
   const { toast } = useToast();
-  const product = products.find((p) => p.id === params.id);
+  const product = products.find((p) => p.id === id);
   
   const firstAvailableVariant = product?.variants.find(v => v.inventory > 0);
   const [selectedVariantId, setSelectedVariantId] = useState<string | null>(
