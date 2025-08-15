@@ -309,3 +309,86 @@ exports.translateProductName = functions.firestore
       throw new functions.https.HttpsError('internal', 'Failed to translate product name.');
     }
   });
+
+/**
+ * A Firebase Function that runs on a schedule to send abandoned cart reminders.
+ * It queries for carts that haven't been updated in 24 hours and sends an email.
+ */
+exports.sendAbandonedCartReminders = functions.pubsub
+  .schedule('every 24 hours')
+  .onRun(async (context) => {
+    const sendgridApiKey = functions.config().sendgrid?.key;
+    if (!sendgridApiKey) {
+      console.error('SendGrid API key not configured. Cannot send reminder emails.');
+      return null;
+    }
+
+    const twentyFourHoursAgo = admin.firestore.Timestamp.fromMillis(
+      Date.now() - 24 * 60 * 60 * 1000
+    );
+
+    const cartsRef = db.collection('carts');
+    const abandonedCartsQuery = cartsRef
+      .where('status', '==', 'active')
+      .where('lastUpdatedAt', '<=', twentyFourHoursAgo);
+
+    const snapshot = await abandonedCartsQuery.get();
+
+    if (snapshot.empty) {
+      console.log('No abandoned carts to process.');
+      return null;
+    }
+
+    const promises = snapshot.docs.map(async (doc) => {
+      const cart = doc.data();
+      const userRef = db.collection('users').doc(cart.userId);
+      const userDoc = await userRef.get();
+
+      if (!userDoc.exists) {
+        console.warn(`User ${cart.userId} for cart ${doc.id} not found. Skipping.`);
+        return;
+      }
+      const user = userDoc.data();
+      if (!user?.email) {
+        console.warn(`User ${cart.userId} has no email. Skipping.`);
+        return;
+      }
+
+      const emailData = {
+        personalizations: [{ to: [{ email: user.email }] }],
+        from: { email: 'reminders@your-app-name.com', name: 'CommerceAI' },
+        subject: 'You left something in your cart!',
+        content: [{
+          type: 'text/html',
+          value: `<h1>Don't miss out!</h1><p>You still have items in your shopping cart. Complete your purchase now!</p>`, // Consider using a transactional email template for better design
+        }],
+      };
+      
+      try {
+        const response = await fetch('https://api.sendgrid.com/v3/mail/send', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${sendgridApiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(emailData),
+        });
+        
+        if (response.ok) {
+          console.log(`Reminder email sent to ${user.email}.`);
+          // Update the cart status to prevent re-sending
+          await doc.ref.update({ status: 'reminder_sent' });
+        } else {
+          const errorBody = await response.json();
+          console.error(`Failed to send email to ${user.email}. Status: ${response.status}`, errorBody);
+        }
+
+      } catch (error) {
+        console.error('Error sending reminder email via SendGrid:', error);
+      }
+    });
+
+    await Promise.all(promises);
+    console.log(`Processed ${snapshot.size} abandoned carts.`);
+    return null;
+  });
