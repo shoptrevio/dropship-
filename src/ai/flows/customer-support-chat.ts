@@ -34,6 +34,7 @@ const prompt = ai.definePrompt({
   name: 'customerSupportChatPrompt',
   input: {schema: CustomerSupportChatInputSchema},
   output: {schema: CustomerSupportChatOutputSchema},
+  model: 'googleai/gemini-2.0-flash',
   prompt: `You are a customer support agent for an e-commerce store.
 
   Your goal is to answer customer questions and resolve their issues efficiently.
