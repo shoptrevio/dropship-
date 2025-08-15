@@ -108,3 +108,55 @@ exports.completePendingOrders = functions.pubsub
       throw new functions.https.HttpsError('internal', 'Failed to update orders.');
     }
   });
+  
+/**
+ * A Firebase Function that monitors stock levels and sends an alert
+ * when a product's inventory drops below a certain threshold.
+ */
+exports.monitorStockLevels = functions.firestore
+  .document('products/{productId}')
+  .onUpdate(async (change, context) => {
+    const productDataAfter = change.after.data();
+    const productDataBefore = change.before.data();
+    const productName = productDataAfter.name;
+    const LOW_STOCK_THRESHOLD = 10;
+
+    const webhookUrl = functions.config().slack?.webhook_url;
+    if (!webhookUrl) {
+      console.error('Slack webhook URL not configured. Skipping alert.');
+      return null;
+    }
+
+    const alerts: Promise<any>[] = [];
+
+    productDataAfter.variants.forEach((variantAfter: any, index: number) => {
+      const variantBefore = productDataBefore.variants[index];
+      
+      // Check if stock has just dropped below the threshold
+      if (variantAfter.inventory < LOW_STOCK_THRESHOLD && variantBefore.inventory >= LOW_STOCK_THRESHOLD) {
+        const message = `LOW STOCK ALERT: Product "${productName}" (Variant: ${variantAfter.color || ''} ${variantAfter.size || ''}) has only ${variantAfter.inventory} units left.`;
+        
+        console.log(message);
+        
+        const alertPromise = fetch(webhookUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ text: message }),
+        });
+        
+        alerts.push(alertPromise);
+      }
+    });
+
+    try {
+      await Promise.all(alerts);
+      console.log('Successfully sent all low stock alerts.');
+    } catch (error) {
+      console.error('Failed to send one or more stock alerts:', error);
+      throw new functions.https.HttpsError('internal', 'Failed to send stock alerts.');
+    }
+    
+    return null;
+  });
