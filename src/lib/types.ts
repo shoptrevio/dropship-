@@ -45,6 +45,21 @@ export type Product = {
   };
 };
 
+// Represents a product draft that triggers an AI description generation.
+// Firestore Collection: /product_drafts
+export type ProductDraft = {
+  id: string; // Document ID
+  productName: string;
+  productCategory: string;
+  keyFeatures: string;
+  targetAudience: string;
+  status: 'new' | 'generating' | 'completed' | 'error';
+  errorMessage?: string;
+  aiGeneratedContent?: {
+    description: string;
+  };
+};
+
 // Represents a supplier or vendor.
 // Firestore Collection: /suppliers
 export type Supplier = {

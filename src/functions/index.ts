@@ -2,9 +2,57 @@
 import * as admin from 'firebase-admin';
 import * as functions from 'firebase-functions';
 import fetch from 'node-fetch';
+import { generateProductDescription, GenerateProductDescriptionInput } from '@/ai/flows/generate-product-description';
 
 admin.initializeApp();
 const db = admin.firestore();
+
+/**
+ * A Firebase Function that triggers when a new document is added to the 'product_drafts' collection.
+ * It calls the Genkit AI flow to generate a product description and saves it back to the draft document.
+ */
+exports.generateDescriptionForProductDraft = functions.firestore
+  .document('product_drafts/{draftId}')
+  .onCreate(async (snap, context) => {
+    const draftData = snap.data();
+    
+    if (!draftData) {
+      console.log('No data associated with the event.');
+      return null;
+    }
+
+    const { productName, productCategory, keyFeatures, targetAudience } = draftData;
+
+    if (!productName || !productCategory || !keyFeatures || !targetAudience) {
+      console.error('Draft is missing required fields for description generation.');
+      return snap.ref.update({ status: 'error', errorMessage: 'Missing required fields.' });
+    }
+
+    const input: GenerateProductDescriptionInput = {
+      productName,
+      productCategory,
+      keyFeatures,
+      targetAudience,
+    };
+
+    try {
+      console.log(`Generating description for: ${productName}`);
+      await snap.ref.update({ status: 'generating' });
+
+      const result = await generateProductDescription(input);
+      const { description } = result;
+
+      console.log(`Successfully generated description for: ${productName}`);
+      return snap.ref.update({ 
+        'aiGeneratedContent.description': description,
+        status: 'completed'
+      });
+    } catch (error) {
+      console.error('Error generating product description:', error);
+      return snap.ref.update({ status: 'error', errorMessage: 'AI generation failed.' });
+    }
+  });
+
 
 /**
  * A Firebase Function that triggers when a new user signs up.
@@ -153,7 +201,7 @@ exports.monitorStockLevels = functions.firestore
     try {
       await Promise.all(alerts);
       console.log('Successfully sent all low stock alerts.');
-    } catch (error) => {
+    } catch (error) {
       console.error('Failed to send one or more stock alerts:', error);
       throw new functions.https.HttpsError('internal', 'Failed to send stock alerts.');
     }
