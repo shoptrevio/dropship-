@@ -1,48 +1,71 @@
+
 rules_version = '2';
+
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Users can only update their own profile.
-    match /users/{userId} {
-      allow read;
-      allow create: if request.auth != null;
-      allow update: if request.auth != null && request.auth.uid == userId;
-      allow delete: if false; // Prevent users from deleting their own accounts
+    // Helper function to check for admin role from custom claims
+    function isAdmin() {
+      return request.auth != null && request.auth.token.role == 'admin';
     }
-    
-    // Customers can only review products they have purchased.
-    // The review must include a rating between 1 and 5.
+
+    // Products collection rules
+    match /products/{productId} {
+      // Admins can read any product, customers can only read active ones.
+      allow read: if resource.data.status == 'active' || isAdmin();
+      
+      // Only admins can create, update, or delete products.
+      allow write: if isAdmin();
+    }
+
+    // Product Reviews rules
     match /product_reviews/{reviewId} {
-      allow read;
+      // Anyone can read reviews
+      allow read: if true;
+      
+      // Users can only create a review if they have purchased the product.
+      // The review must contain a rating between 1 and 5.
       allow create: if request.auth != null
-                    && request.resource.data.rating is int
-                    && request.resource.data.rating >= 1
-                    && request.resource.data.rating <= 5
-                    && exists(/databases/$(database)/documents/orders/$(request.resource.data.orderId))
-                    && get(/databases/$(database)/documents/orders/$(request.resource.data.orderId)).data.userId == request.auth.uid
-                    && request.resource.data.productId in get(/databases/$(database)/documents/orders/$(request.resource.data.orderId)).data.items.map(item => item.productId);
+        && request.resource.data.rating >= 1 && request.resource.data.rating <= 5
+        && exists(/databases/$(database)/documents/orders/$(request.resource.data.orderId))
+        && get(/databases/$(database)/documents/orders/$(request.resource.data.orderId)).data.userId == request.auth.uid
+        && request.resource.data.productId in get(/databases/$(database)/documents/orders/$(request.resource.data.orderId)).data.items.map(item => item.productId);
+
+      // Users can only update or delete their own reviews
       allow update, delete: if request.auth != null && resource.data.userId == request.auth.uid;
     }
-    
-    // Products are publicly readable only if their status is 'active'.
-    // Writes are restricted to admins (not yet implemented).
-    match /products/{productId} {
-      allow read: if resource.data.status == 'active';
-      allow write: if false; // Lock down writes for now
-    }
 
-    // A list of high-risk countries for fraud prevention.
-    function isHighRiskCountry() {
-      // In a real application, this list would be more extensive.
-      return request.resource.data.shippingAddress.country in ['NG', 'VN', 'ID'];
-    }
-
-    // Orders can only be created by authenticated users for themselves.
-    // They can only read their own orders.
+    // Orders collection rules
     match /orders/{orderId} {
-      allow read, update: if request.auth != null && resource.data.userId == request.auth.uid;
-      allow create: if request.auth != null && request.resource.data.userId == request.auth.uid && !isHighRiskCountry();
-      allow delete: if false; // Do not allow orders to be deleted
+      // A user can only read or create their own order.
+      // They cannot create an order from a high-risk country.
+      function isOwner() {
+        return request.auth != null && request.resource.data.userId == request.auth.uid;
+      }
+      
+      function isNotHighRisk() {
+          let highRiskCountries = ['KP', 'IR', 'SY']; // Example list of blocked ISO 3166-1 alpha-2 country codes
+          return !(request.resource.data.shippingAddress.country in highRiskCountries);
+      }
+
+      allow read: if request.auth != null && resource.data.userId == request.auth.uid;
+      allow create: if isOwner() && isNotHighRisk();
+      
+      // Allow the owner to update the order (e.g., to cancel) but not delete.
+      allow update: if request.auth != null && resource.data.userId == request.auth.uid;
+      allow delete: if false;
+    }
+
+    // Users collection rules
+    match /users/{userId} {
+      // Anyone can read user profiles (e.g., for display names).
+      allow read: if true;
+      
+      // A user can only create their own user document (typically done via Cloud Function).
+      // They can only update their own document. Deletion is disallowed.
+      allow create: if request.auth != null && request.auth.uid == userId;
+      allow update: if request.auth != null && request.auth.uid == userId;
+      allow delete: if false;
     }
   }
 }
