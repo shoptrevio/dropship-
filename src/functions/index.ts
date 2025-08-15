@@ -12,6 +12,50 @@ const db = admin.firestore();
 const translate = new Translate();
 const visionClient = new vision.ImageAnnotatorClient();
 
+/**
+ * A centralized error logging and alerting function.
+ * @param {any} error The error object.
+ * @param {string} functionName The name of the function where the error occurred.
+ * @param {any} context Additional context about the error.
+ * @param {boolean} isCritical If true, sends an alert to Slack.
+ */
+const logErrorAndAlertAdmin = async (error: any, functionName: string, context: any, isCritical: boolean = false) => {
+  const logEntry = {
+    timestamp: admin.firestore.FieldValue.serverTimestamp(),
+    functionName,
+    errorMessage: error.message,
+    errorStack: error.stack,
+    context,
+  };
+
+  // Log to Firestore
+  try {
+    await db.collection('logs').add(logEntry);
+  } catch (logError) {
+    console.error('FATAL: Could not write to logs collection.', logError);
+  }
+
+  // Alert on critical errors
+  if (isCritical) {
+    const webhookUrl = functions.config().slack?.webhook_url;
+    if (!webhookUrl) {
+      console.error('Slack webhook URL not configured. Skipping critical alert.');
+      return;
+    }
+
+    const message = `🚨 Critical Error in ${functionName}:\n\`\`\`${error.message}\`\`\`\nContext: \`\`\`${JSON.stringify(context)}\`\`\``;
+    try {
+      await fetch(webhookUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: message }),
+      });
+    } catch (alertError) {
+      console.error('FATAL: Could not send Slack alert.', alertError);
+    }
+  }
+};
+
 
 /**
  * A Firebase Function that triggers when a new user signs up.
@@ -30,7 +74,7 @@ exports.createNewUserDocument = functions.auth.user().onCreate(async (user) => {
     });
     console.log(`Successfully created user document for ${uid}`);
   } catch (error) {
-    console.error(`Error creating user document for ${uid}:`, error);
+    await logErrorAndAlertAdmin(error, 'createNewUserDocument', { userId: uid }, true);
   }
   return null;
 });
@@ -44,6 +88,7 @@ exports.generateDescriptionForProductDraft = functions.firestore
   .document('product_drafts/{draftId}')
   .onCreate(async (snap, context) => {
     const draftData = snap.data();
+    const draftId = context.params.draftId;
     
     if (!draftData) {
       console.log('No data associated with the event.');
@@ -53,8 +98,9 @@ exports.generateDescriptionForProductDraft = functions.firestore
     const { productName, productCategory, keyFeatures, targetAudience } = draftData;
 
     if (!productName || !productCategory || !keyFeatures || !targetAudience) {
-      console.error('Draft is missing required fields for description generation.');
-      return snap.ref.update({ status: 'error', errorMessage: 'Missing required fields.' });
+      const errorMessage = 'Draft is missing required fields.';
+      console.error(errorMessage);
+      return snap.ref.update({ status: 'error', errorMessage });
     }
 
     const input: GenerateProductDescriptionInput = {
@@ -77,7 +123,7 @@ exports.generateDescriptionForProductDraft = functions.firestore
         status: 'completed'
       });
     } catch (error) {
-      console.error('Error generating product description:', error);
+      await logErrorAndAlertAdmin(error, 'generateDescriptionForProductDraft', { draftId }, true);
       return snap.ref.update({ status: 'error', errorMessage: 'AI generation failed.' });
     }
   });
@@ -103,14 +149,10 @@ exports.subscribeUserAndSendWelcomeEmail = functions.auth.user().onCreate(async 
     });
     console.log(`Successfully added ${email} to subscribers list.`);
   } catch (error) {
-    console.error(`Failed to add user ${uid} to subscribers list:`, error);
-    // Even if this fails, we can still try to send the email
+    await logErrorAndAlertAdmin(error, 'subscribeUserAndSendWelcomeEmail', { step: 'firestore', userId: uid }, false);
   }
 
   // 2. Send a welcome email using a third-party service (e.g., SendGrid)
-  // IMPORTANT: Replace with your actual email service provider's details and API key.
-  // Store your API key securely in environment configuration, not in the code.
-  // For example: `firebase functions:config:set sendgrid.key="YOUR_API_KEY"`
   const apiKey = functions.config().sendgrid?.key;
   if (!apiKey) {
     console.error('SendGrid API key not configured. Skipping welcome email.');
@@ -144,8 +186,7 @@ exports.subscribeUserAndSendWelcomeEmail = functions.auth.user().onCreate(async 
       console.error(`Failed to send welcome email to ${email}. Status: ${response.status}`, errorBody);
     }
   } catch (error) {
-    console.error('Error sending welcome email:', error);
-    throw new functions.https.HttpsError('internal', 'Failed to send welcome email.');
+    await logErrorAndAlertAdmin(error, 'subscribeUserAndSendWelcomeEmail', { step: 'sendgrid', userId: uid }, true);
   }
 
   return null;
@@ -181,7 +222,7 @@ exports.completePendingOrders = functions.pubsub
       console.log(`Successfully updated ${snapshot.size} orders.`);
       return { success: true, count: snapshot.size };
     } catch (error) {
-      console.error('Batch update failed', error);
+      await logErrorAndAlertAdmin(error, 'completePendingOrders', { batchSize: snapshot.size }, true);
       throw new functions.https.HttpsError('internal', 'Failed to update orders.');
     }
   });
@@ -196,6 +237,7 @@ exports.monitorStockLevels = functions.firestore
     const productDataAfter = change.after.data();
     const productDataBefore = change.before.data();
     const productName = productDataAfter.name;
+    const productId = context.params.productId;
     const LOW_STOCK_THRESHOLD = 10;
 
     const webhookUrl = functions.config().slack?.webhook_url;
@@ -209,7 +251,6 @@ exports.monitorStockLevels = functions.firestore
     productDataAfter.variants.forEach((variantAfter: any, index: number) => {
       const variantBefore = productDataBefore.variants[index];
       
-      // Check if stock has just dropped below the threshold
       if (variantAfter.inventory < LOW_STOCK_THRESHOLD && variantBefore.inventory >= LOW_STOCK_THRESHOLD) {
         const message = `LOW STOCK ALERT: Product "${productName}" (Variant: ${variantAfter.color || ''} ${variantAfter.size || ''}) has only ${variantAfter.inventory} units left.`;
         
@@ -229,10 +270,8 @@ exports.monitorStockLevels = functions.firestore
 
     try {
       await Promise.all(alerts);
-      console.log('Successfully sent all low stock alerts.');
     } catch (error) {
-      console.error('Failed to send one or more stock alerts:', error);
-      throw new functions.https.HttpsError('internal', 'Failed to send stock alerts.');
+       await logErrorAndAlertAdmin(error, 'monitorStockLevels', { productId }, false);
     }
     
     return null;
@@ -246,31 +285,28 @@ exports.awardLoyaltyPoints = functions.firestore
   .document('orders/{orderId}')
   .onCreate(async (snap, context) => {
     const orderData = snap.data();
-    const userId = orderData.userId;
-    const items = orderData.items;
+    const { orderId } = context.params;
+    const { userId, items } = orderData;
 
     if (!userId || !items || items.length === 0) {
-      console.log('Order is missing user ID or items. Cannot award points.');
+      console.log(`Order ${orderId} is missing user ID or items. Cannot award points.`);
       return null;
     }
 
-    // Calculate total amount spent
     const totalSpent = items.reduce((sum: number, item: any) => {
       return sum + item.priceAtPurchase * item.quantity;
     }, 0);
 
-    // Award 1 point for every $10 spent
     const pointsToAward = Math.floor(totalSpent / 10);
 
     if (pointsToAward === 0) {
-      console.log(`Order total ($${totalSpent.toFixed(2)}) is less than $10. No points awarded.`);
+      console.log(`Order total ($${totalSpent.toFixed(2)}) is less than $10. No points awarded for order ${orderId}.`);
       return null;
     }
 
     const userRef = db.collection('users').doc(userId);
 
     try {
-      // Use a transaction to safely update the user's points
       await db.runTransaction(async (transaction) => {
         const userDoc = await transaction.get(userRef);
         if (!userDoc.exists) {
@@ -280,17 +316,12 @@ exports.awardLoyaltyPoints = functions.firestore
         const newPoints = currentPoints + pointsToAward;
         transaction.update(userRef, { loyalty_points: newPoints });
       });
-
-      // Alternative using FieldValue.increment() for simpler atomic updates
-      // await userRef.update({
-      //   loyalty_points: admin.firestore.FieldValue.increment(pointsToAward),
-      // });
       
-      console.log(`Awarded ${pointsToAward} loyalty points to user ${userId}.`);
+      console.log(`Awarded ${pointsToAward} loyalty points to user ${userId} for order ${orderId}.`);
 
     } catch (error) {
-      console.error(`Failed to award loyalty points to user ${userId}:`, error);
-      throw new functions.https.HttpsError('internal', 'Could not award loyalty points.');
+      // Use the centralized error handler
+      await logErrorAndAlertAdmin(error, 'awardLoyaltyPoints', { userId, orderId }, true);
     }
     
     return null;
@@ -304,20 +335,17 @@ exports.translateProductName = functions.firestore
   .document('products/{productId}')
   .onWrite(async (change, context) => {
     const dataAfter = change.after.data();
-    // If document is deleted, do nothing
+    const productId = context.params.productId;
+
     if (!dataAfter) {
       return null;
     }
 
     const englishName = dataAfter.name;
     const spanishName = dataAfter.name_es;
-
-    // Check if the name has changed and a Spanish translation doesn't already exist
-    // Or if the English name exists but the Spanish one doesn't
     const needsTranslation = !change.before.exists || (change.before.data().name !== englishName) || !spanishName;
 
     if (!englishName || !needsTranslation) {
-      console.log('No new English name to translate, or Spanish name already exists. Skipping.');
       return null;
     }
 
@@ -330,14 +358,13 @@ exports.translateProductName = functions.firestore
         name_es: translation,
       });
     } catch (error) {
-      console.error('Error translating product name:', error);
-      throw new functions.https.HttpsError('internal', 'Failed to translate product name.');
+      await logErrorAndAlertAdmin(error, 'translateProductName', { productId, englishName }, false);
     }
+    return null;
   });
 
 /**
  * A Firebase Function that runs on a schedule to send abandoned cart reminders.
- * It queries for carts that haven't been updated in 24 hours and sends an email.
  */
 exports.sendAbandonedCartReminders = functions.pubsub
   .schedule('every 24 hours')
@@ -369,15 +396,10 @@ exports.sendAbandonedCartReminders = functions.pubsub
       const userRef = db.collection('users').doc(cart.userId);
       const userDoc = await userRef.get();
 
-      if (!userDoc.exists) {
-        console.warn(`User ${cart.userId} for cart ${doc.id} not found. Skipping.`);
+      if (!userDoc.exists || !userDoc.data()?.email) {
         return;
       }
       const user = userDoc.data();
-      if (!user?.email) {
-        console.warn(`User ${cart.userId} has no email. Skipping.`);
-        return;
-      }
 
       const emailData = {
         personalizations: [{ to: [{ email: user.email }] }],
@@ -385,12 +407,12 @@ exports.sendAbandonedCartReminders = functions.pubsub
         subject: 'You left something in your cart!',
         content: [{
           type: 'text/html',
-          value: `<h1>Don't miss out!</h1><p>You still have items in your shopping cart. Complete your purchase now!</p>`, // Consider using a transactional email template for better design
+          value: `<h1>Don't miss out!</h1><p>You still have items in your shopping cart. Complete your purchase now!</p>`,
         }],
       };
       
       try {
-        const response = await fetch('https://api.sendgrid.com/v3/mail/send', {
+        await fetch('https://api.sendgrid.com/v3/mail/send', {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${sendgridApiKey}`,
@@ -398,128 +420,70 @@ exports.sendAbandonedCartReminders = functions.pubsub
           },
           body: JSON.stringify(emailData),
         });
-        
-        if (response.ok) {
-          console.log(`Reminder email sent to ${user.email}.`);
-          // Update the cart status to prevent re-sending
-          await doc.ref.update({ status: 'reminder_sent' });
-        } else {
-          const errorBody = await response.json();
-          console.error(`Failed to send email to ${user.email}. Status: ${response.status}`, errorBody);
-        }
-
+        await doc.ref.update({ status: 'reminder_sent' });
       } catch (error) {
-        console.error('Error sending reminder email via SendGrid:', error);
+        await logErrorAndAlertAdmin(error, 'sendAbandonedCartReminders', { cartId: doc.id, userId: cart.userId }, false);
       }
     });
 
     await Promise.all(promises);
-    console.log(`Processed ${snapshot.size} abandoned carts.`);
     return null;
   });
 
 /**
  * A Firebase Function that triggers when an image is uploaded to Firebase Storage.
- * It uses the Google Cloud Vision API to detect labels in the image and saves them
- * as tags in the corresponding Firestore product document.
  */
 exports.analyzeProductImage = functions.storage.object().onFinalize(async (object) => {
-  const filePath = object.name;
-  const contentType = object.contentType;
-  const bucketName = object.bucket;
+  const { contentType, name: filePath, bucket: bucketName } = object;
 
-  // Exit if this is triggered on a file that is not an image.
-  if (!contentType?.startsWith('image/')) {
-    return console.log('This is not an image.');
-  }
-
-  // Exit if the image is not in a 'products' folder.
-  // This is a convention to ensure we only process product images.
-  if (!filePath?.startsWith('products/')) {
-    return console.log('This is not a product image.');
-  }
-
-  // Extract the product ID from the file path (e.g., 'products/PRODUCT_ID/image.jpg').
-  const pathParts = filePath.split('/');
-  const productId = pathParts[1];
-  if (!productId) {
-    console.log('Could not extract product ID from path.');
+  if (!contentType?.startsWith('image/') || !filePath?.startsWith('products/')) {
     return null;
   }
 
-  console.log(`Analyzing image for product: ${productId}`);
+  const pathParts = filePath.split('/');
+  const productId = pathParts[1];
+  if (!productId) return null;
 
+  console.log(`Analyzing image for product: ${productId}`);
   const gcsUri = `gs://${bucketName}/${filePath}`;
   
   try {
-    // Call the Vision API to detect labels
     const [result] = await visionClient.labelDetection(gcsUri);
     const labels = result.labelAnnotations;
     
-    if (!labels || labels.length === 0) {
-      console.log('No labels detected for the image.');
-      return null;
-    }
+    if (!labels || labels.length === 0) return null;
     
-    // Extract the description of each label
     const tags = labels.map(label => label.description).filter(Boolean) as string[];
-    console.log(`Detected tags: ${tags.join(', ')}`);
-
-    // Save the tags to the Firestore document
-    const productRef = db.collection('products').doc(productId);
     
-    await productRef.set({
-      aiGeneratedContent: {
-        visualSearchTags: tags,
-      }
-    }, { merge: true });
+    const productRef = db.collection('products').doc(productId);
+    await productRef.set({ aiGeneratedContent: { visualSearchTags: tags } }, { merge: true });
 
     console.log(`Successfully saved tags for product ${productId}.`);
-    return null;
-
   } catch (error) {
-    console.error('Error analyzing image with Vision API:', error);
-    throw new functions.https.HttpsError('internal', 'Failed to analyze image.');
+    await logErrorAndAlertAdmin(error, 'analyzeProductImage', { gcsUri }, true);
   }
+  return null;
 });
 
 
 /**
  * A Firebase Function that triggers when an order's status changes to 'shipped'.
- * It sends a notification email to the customer using SendGrid.
  */
 exports.sendShippingNotification = functions.firestore
   .document('orders/{orderId}')
   .onUpdate(async (change, context) => {
+    const { orderId } = context.params;
     const orderDataAfter = change.after.data();
-    const orderDataBefore = change.before.data();
-    const orderId = context.params.orderId;
 
-    // Check if the status has just been changed to 'shipped'
-    if (orderDataBefore.status !== 'shipped' && orderDataAfter.status === 'shipped') {
-      const userId = orderDataAfter.userId;
+    if (change.before.data().status !== 'shipped' && orderDataAfter.status === 'shipped') {
+      const { userId } = orderDataAfter;
+      const userDoc = await db.collection('users').doc(userId).get();
       
-      const userRef = db.collection('users').doc(userId);
-      const userDoc = await userRef.get();
-      
-      if (!userDoc.exists) {
-        console.error(`User ${userId} not found. Cannot send shipping email for order ${orderId}.`);
-        return null;
-      }
-      
-      const user = userDoc.data();
-      const userEmail = user?.email;
-
-      if (!userEmail) {
-        console.error(`User ${userId} does not have an email address. Cannot send shipping email.`);
-        return null;
-      }
+      if (!userDoc.exists || !userDoc.data()?.email) return null;
+      const userEmail = userDoc.data()?.email;
       
       const sendgridApiKey = functions.config().sendgrid?.key;
-      if (!sendgridApiKey) {
-        console.error('SendGrid API key not configured. Cannot send email.');
-        return null;
-      }
+      if (!sendgridApiKey) return null;
 
       const emailData = {
         personalizations: [{ to: [{ email: userEmail }] }],
@@ -527,110 +491,63 @@ exports.sendShippingNotification = functions.firestore
         subject: `Your order #${orderId} has shipped!`,
         content: [{
           type: 'text/html',
-          value: `<h1>Great News!</h1><p>Your order #${orderId} is on its way. You can track it using the tracking number: ${orderDataAfter.tracking?.trackingNumber || 'Not available'}.</p>`,
+          value: `<h1>Great News!</h1><p>Your order #${orderId} is on its way. Track it: ${orderDataAfter.tracking?.trackingNumber || 'N/A'}.</p>`,
         }],
       };
       
       try {
-        const response = await fetch('https://api.sendgrid.com/v3/mail/send', {
+        await fetch('https://api.sendgrid.com/v3/mail/send', {
           method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${sendgridApiKey}`,
-            'Content-Type': 'application/json',
-          },
+          headers: { 'Authorization': `Bearer ${sendgridApiKey}`, 'Content-Type': 'application/json' },
           body: JSON.stringify(emailData),
         });
-
-        if (response.ok) {
-          console.log(`Shipping notification sent successfully to ${userEmail} for order ${orderId}.`);
-        } else {
-          const errorBody = await response.json();
-          console.error(`Failed to send shipping email for order ${orderId}. Status: ${response.status}`, errorBody);
-        }
       } catch (error) {
-        console.error(`Error sending shipping notification for order ${orderId}:`, error);
-        throw new functions.https.HttpsError('internal', 'Failed to send shipping email.');
+        await logErrorAndAlertAdmin(error, 'sendShippingNotification', { orderId, userId }, true);
       }
     }
-
     return null;
   });
 
 /**
  * A callable Firebase Function for admin users to fetch aggregated daily sales data.
- * It checks for an 'admin' custom claim before executing.
  */
 exports.getDailySalesStats = functions.https.onCall(async (data, context) => {
-  // 1. Check for admin privileges.
   if (context.auth?.token.role !== 'admin') {
-    throw new functions.https.HttpsError(
-      'permission-denied',
-      'This function can only be called by admin users.'
-    );
+    throw new functions.https.HttpsError('permission-denied', 'Must be an admin to call this function.');
   }
 
-  // 2. Query transactions from the last 30 days.
-  const thirtyDaysAgo = new Date();
-  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-  const thirtyDaysAgoTimestamp = admin.firestore.Timestamp.fromDate(thirtyDaysAgo);
+  const thirtyDaysAgo = admin.firestore.Timestamp.fromMillis(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  const snapshot = await db.collection('transactions').where('createdAt', '>=', thirtyDaysAgo).get();
 
-  const transactionsRef = db.collection('transactions');
-  const query = transactionsRef.where('createdAt', '>=', thirtyDaysAgoTimestamp);
+  if (snapshot.empty) return {};
 
-  const snapshot = await query.get();
-
-  if (snapshot.empty) {
-    return {};
-  }
-
-  // 3. Aggregate data by day.
   const salesByDay: { [key: string]: number } = {};
-
   snapshot.forEach(doc => {
-    const transaction = doc.data();
-    const date = transaction.createdAt.toDate().toISOString().split('T')[0]; // YYYY-MM-DD
-    
-    if (salesByDay[date]) {
-      salesByDay[date] += transaction.amount;
-    } else {
-      salesByDay[date] = transaction.amount;
-    }
+    const { createdAt, amount } = doc.data();
+    const date = createdAt.toDate().toISOString().split('T')[0];
+    salesByDay[date] = (salesByDay[date] || 0) + amount;
   });
 
-  // 4. Return the aggregated data.
   return salesByDay;
 });
 
 /**
  * A Firebase Function that assigns the 'admin' role to a user.
- * It triggers when a document is created in the 'admin_users' collection,
- * using the user's email as the document ID.
  */
 exports.assignAdminRole = functions.firestore
   .document('admin_users/{email}')
   .onCreate(async (snap, context) => {
     const userEmail = context.params.email;
-    
     try {
-      // Get the user by email
       const user = await admin.auth().getUserByEmail(userEmail);
-      
-      // Check if the user already has the admin role
       if (user.customClaims && (user.customClaims as any).role === 'admin') {
-        console.log(`User ${userEmail} is already an admin.`);
-        return null;
+        return;
       }
-      
-      // Set the custom claim
       await admin.auth().setCustomUserClaims(user.uid, { role: 'admin' });
-      console.log(`Successfully assigned admin role to ${userEmail}.`);
-
-      // Optionally, update the user document in Firestore as well
       await db.collection('users').doc(user.uid).update({ role: 'admin' });
-      
+      console.log(`Successfully assigned admin role to ${userEmail}.`);
     } catch (error) {
-      console.error(`Error assigning admin role to ${userEmail}:`, error);
+      await logErrorAndAlertAdmin(error, 'assignAdminRole', { email: userEmail }, true);
     }
-    
     return null;
   });

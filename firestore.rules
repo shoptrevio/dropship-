@@ -1,78 +1,58 @@
+
 rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Helper functions for common access control patterns.
+
+    // Helper functions
     function isAdmin() {
-      return request.auth.token.role == 'admin';
+      return request.auth != null && request.auth.token.role == 'admin';
     }
 
     function isOwner(userId) {
-      return request.auth.uid == userId;
+      return request.auth != null && request.auth.uid == userId;
     }
+    
+    // -- Collections --
 
-    // --- Product and Order Rules ---
-
-    // Products are publicly readable if 'active', but only writable by admins.
+    // Products can be read by anyone if they are 'active', but only written by admins.
     match /products/{productId} {
       allow read: if resource.data.status == 'active';
       allow write: if isAdmin();
     }
-
-    // Users can manage their own profile. Admins can manage any user.
+    
+    // Users can create their own profile, and can only read/update their own document. Admins can read/write any user.
     match /users/{userId} {
+      allow create: if isOwner(userId);
       allow get, update: if isOwner(userId) || isAdmin();
-      allow create: if request.auth != null; // A user can create their own profile.
-      allow delete: if isAdmin();
-      // Listing users is disallowed for security.
-      allow list: if isAdmin();
+      allow list, delete: if isAdmin();
     }
 
-    // Users can manage their own orders. Admins can manage any order.
+    // Orders can be created by any authenticated user for themselves. They can only be read/updated by the owner or an admin.
     match /orders/{orderId} {
-      allow read, update: if isOwner(resource.data.userId) || isAdmin();
-      allow create: if isOwner(request.resource.data.userId);
-      allow delete: if isAdmin();
+      allow create: if isOwner(resource.data.userId);
+      allow get, update: if isOwner(resource.data.userId) || isAdmin();
+      allow list, delete: if isAdmin();
     }
 
-    // Admins can read transaction data for dashboards.
-    // Clients should use a callable function instead of reading directly.
+    // Transactions can only be accessed via secure Cloud Functions. No direct client access.
     match /transactions/{transactionId} {
+        allow read, write: if false;
+    }
+    
+    // Tickets can only be read/written by the user who created them or by an admin.
+    match /tickets/{ticketId} {
+      allow read, write: if isOwner(resource.data.userId) || isAdmin();
+    }
+    
+    // Admins can create other admins by adding their email to this collection. No one else can read/write here.
+    match /admin_users/{email} {
         allow read, write: if isAdmin();
     }
 
-    // Admin users collection is only accessible by other admins.
-    match /admin_users/{email} {
-      allow read, write: if isAdmin();
-    }
-  }
-}
-
-// --- Firebase Storage Rules ---
-service firebase.storage {
-  match /b/{bucket}/o {
-    // Files are publicly readable, but this can be restricted.
-    // match /{allPaths=**} {
-    //   allow read;
-    // }
-
-    // Allow users to upload to their own designated folder.
-    // The client MUST upload to a path like 'user-uploads/some-user-id/file.jpg'.
-    match /user-uploads/{userId}/{allPaths=**} {
-      // Any authenticated user can read from any user's folder.
-      // You could tighten this to `if request.auth.uid == userId;` if needed.
-      allow read: if request.auth != null;
-
-      // A user can only create/write to their own folder.
-      allow write: if request.auth.uid == userId;
-    }
-
-    // Rules for product images.
-    match /products/{productId}/{allPaths=**} {
-        // Anyone can read product images.
-        allow read;
-        // Only admins can upload/update product images.
-        allow write: if request.auth.token.role == 'admin';
+    // Logs collection is write-only for functions, and not readable by any client.
+    match /logs/{logId} {
+      allow read, write: if false;
     }
   }
 }
