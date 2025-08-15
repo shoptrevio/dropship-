@@ -600,3 +600,37 @@ exports.getDailySalesStats = functions.https.onCall(async (data, context) => {
   // 4. Return the aggregated data.
   return salesByDay;
 });
+
+/**
+ * A Firebase Function that assigns the 'admin' role to a user.
+ * It triggers when a document is created in the 'admin_users' collection,
+ * using the user's email as the document ID.
+ */
+exports.assignAdminRole = functions.firestore
+  .document('admin_users/{email}')
+  .onCreate(async (snap, context) => {
+    const userEmail = context.params.email;
+    
+    try {
+      // Get the user by email
+      const user = await admin.auth().getUserByEmail(userEmail);
+      
+      // Check if the user already has the admin role
+      if (user.customClaims && (user.customClaims as any).role === 'admin') {
+        console.log(`User ${userEmail} is already an admin.`);
+        return null;
+      }
+      
+      // Set the custom claim
+      await admin.auth().setCustomUserClaims(user.uid, { role: 'admin' });
+      console.log(`Successfully assigned admin role to ${userEmail}.`);
+
+      // Optionally, update the user document in Firestore as well
+      await db.collection('users').doc(user.uid).update({ role: 'admin' });
+      
+    } catch (error) {
+      console.error(`Error assigning admin role to ${userEmail}:`, error);
+    }
+    
+    return null;
+  });
