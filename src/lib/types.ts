@@ -104,6 +104,7 @@ export type User = {
   id: string; // Document ID (matches Firebase Auth UID)
   email: string;
   role: 'admin' | 'staff' | 'customer' | 'ux-tester'; // Added 'ux-tester' role
+  loyalty_points?: number;
   preferences?: {
     theme?: 'light' | 'dark' | 'system';
     language?: string;

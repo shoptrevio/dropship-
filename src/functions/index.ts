@@ -153,9 +153,67 @@ exports.monitorStockLevels = functions.firestore
     try {
       await Promise.all(alerts);
       console.log('Successfully sent all low stock alerts.');
-    } catch (error) {
+    } catch (error) => {
       console.error('Failed to send one or more stock alerts:', error);
       throw new functions.https.HttpsError('internal', 'Failed to send stock alerts.');
+    }
+    
+    return null;
+  });
+
+/**
+ * A Firebase Function that awards loyalty points to a user when they complete a purchase.
+ * It triggers when a new document is created in the 'orders' collection.
+ */
+exports.awardLoyaltyPoints = functions.firestore
+  .document('orders/{orderId}')
+  .onCreate(async (snap, context) => {
+    const orderData = snap.data();
+    const userId = orderData.userId;
+    const items = orderData.items;
+
+    if (!userId || !items || items.length === 0) {
+      console.log('Order is missing user ID or items. Cannot award points.');
+      return null;
+    }
+
+    // Calculate total amount spent
+    const totalSpent = items.reduce((sum: number, item: any) => {
+      return sum + item.priceAtPurchase * item.quantity;
+    }, 0);
+
+    // Award 1 point for every $10 spent
+    const pointsToAward = Math.floor(totalSpent / 10);
+
+    if (pointsToAward === 0) {
+      console.log(`Order total ($${totalSpent.toFixed(2)}) is less than $10. No points awarded.`);
+      return null;
+    }
+
+    const userRef = db.collection('users').doc(userId);
+
+    try {
+      // Use a transaction to safely update the user's points
+      await db.runTransaction(async (transaction) => {
+        const userDoc = await transaction.get(userRef);
+        if (!userDoc.exists) {
+          throw new Error('User document not found!');
+        }
+        const currentPoints = userDoc.data()?.loyalty_points || 0;
+        const newPoints = currentPoints + pointsToAward;
+        transaction.update(userRef, { loyalty_points: newPoints });
+      });
+
+      // Alternative using FieldValue.increment() for simpler atomic updates
+      // await userRef.update({
+      //   loyalty_points: admin.firestore.FieldValue.increment(pointsToAward),
+      // });
+      
+      console.log(`Awarded ${pointsToAward} loyalty points to user ${userId}.`);
+
+    } catch (error) {
+      console.error(`Failed to award loyalty points to user ${userId}:`, error);
+      throw new functions.https.HttpsError('internal', 'Could not award loyalty points.');
     }
     
     return null;
