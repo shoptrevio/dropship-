@@ -1,70 +1,87 @@
+
 rules_version = '2';
+
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Helper function to check for admin role
+    
+    // Helper functions
     function isAdmin() {
       return request.auth.token.role == 'admin';
     }
-
-    // Helper function to check if the user is the owner of the document
+    
     function isOwner(userId) {
-      return request.auth != null && request.auth.uid == userId;
+      return request.auth.uid == userId;
+    }
+    
+    function isProductPurchased(productId) {
+      // Check if a user has an order containing the specified product
+      return exists(/databases/$(database)/documents/orders/{orderId}) &&
+             resource.data.userId == request.auth.uid &&
+             resource.data.items[?(@.productId == productId)].size() > 0;
     }
 
-    match /users/{userId} {
-      // Allow a user to get their own document. Admins can get any.
-      // Disallow listing all users for non-admins.
-      allow get: if isOwner(userId) || isAdmin();
-      allow list: if isAdmin();
-      
-      // Allow a user to create their own profile.
-      allow create: if isOwner(userId);
-      
-      // Allow a user to update their own profile. Admins can update any.
-      allow update: if isOwner(userId) || isAdmin();
-      
-      // Only admins can delete user profiles.
-      allow delete: if isAdmin();
-    }
-
+    // Collection: products
+    // Rules:
+    // - Anyone can read a product if its status is 'active'.
+    // - Only admins can create, update, or delete products.
     match /products/{productId} {
-      // Allow anyone to read a product, but only if it's 'active'.
       allow read: if resource.data.status == 'active';
-      // Allow admins to write (create, update, delete) products.
       allow write: if isAdmin();
     }
     
-    match /orders/{orderId} {
-      // A user can create an order if they are the owner.
-      allow create: if isOwner(resource.data.userId);
+    // Collection: product_reviews
+    // Rules:
+    // - Allow creation only if the user is authenticated and has purchased the product.
+    match /products/{productId}/product_reviews/{reviewId} {
+       allow create: if isProductPurchased(productId);
+       allow read: if true;
+       allow update, delete: if isOwner(request.auth.uid) || isAdmin();
+    }
 
-      // A user can read/update an order if they are the owner or an admin.
-      // Admins can delete orders.
-      allow read, update: if isOwner(resource.data.userId) || isAdmin();
+    // Collection: users
+    // Rules:
+    // - A user can read or update their own profile.
+    // - Admins can read or update any user profile.
+    // - Authenticated users can create their own profile.
+    // - Only admins can delete user profiles.
+    match /users/{userId} {
+      allow get: if isOwner(userId) || isAdmin();
+      allow list: if isAdmin();
+      allow create: if isOwner(userId);
+      allow update: if isOwner(userId) || isAdmin();
       allow delete: if isAdmin();
     }
 
-    match /product_reviews/{reviewId} {
-        // A user can create a review if they have purchased the product.
-        allow create: if exists(/databases/$(database)/documents/orders/$(request.resource.data.orderId)) &&
-                         get(/databases/$(database)/documents/orders/$(request.resource.data.orderId)).data.userId == request.auth.uid;
-        // Allow anyone to read reviews.
-        allow read: if true;
+    // Collection: orders
+    // Rules:
+    // - A user can read or update their own orders.
+    // - Admins can access any order.
+    // - A user can only create an order for themselves.
+    match /orders/{orderId} {
+      allow get, list, update: if isOwner(resource.data.userId) || isAdmin();
+      allow create: if isOwner(request.resource.data.userId);
+      allow delete: if isAdmin();
     }
-
-    match /admin_users/{email} {
-      // Only allow backend functions to write to this collection.
-      allow read, write: if false;
-    }
-
-    match /carts/{cartId} {
-      allow read, write: if isOwner(resource.data.userId) || isAdmin();
-    }
-
+    
+    // Collection: transactions
+    // Rules:
+    // - Deny all client-side access. Data should be accessed via secure Cloud Functions.
     match /transactions/{transactionId} {
-      // Deny all client-side access to raw transaction data.
-      // Access should be through a secure callable function.
-      allow read, write: if false;
+        allow read, write: if false;
     }
+    
+    // Collection: tickets
+    // Rules:
+    // - Users can create tickets for themselves.
+    // - Users can read their own tickets.
+    // - Admins can read/write all tickets.
+    match /tickets/{ticketId} {
+      allow create: if isOwner(request.resource.data.userId);
+      allow read, update: if isOwner(resource.data.userId) || isAdmin();
+      allow list: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // By default, disallow all other reads and writes
   }
 }

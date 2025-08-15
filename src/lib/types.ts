@@ -44,6 +44,7 @@ export type Product = {
     visualSearchTags?: string[]; // Tags generated from image analysis for visual search.
     priceHistory?: Record<string, number>; // e.g. { "2023-10-26T10:00:00Z": 19.99 }
   };
+  status?: 'active' | 'draft';
 };
 
 // Represents a product draft that triggers an AI description generation.
