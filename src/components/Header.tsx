@@ -1,7 +1,8 @@
+
 'use client';
 
 import Link from 'next/link';
-import { Bot, Home, PackagePlus, ShoppingCart, Store } from 'lucide-react';
+import { Bot, Home, PackagePlus, ShoppingCart, Store, LifeBuoy } from 'lucide-react';
 import { Button } from './ui/button';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
@@ -13,6 +14,7 @@ export function Header() {
     { href: '/', label: 'Home', icon: Home },
     { href: '/admin/add-product', label: 'Add Product', icon: PackagePlus },
     { href: '/checkout', label: 'Checkout', icon: ShoppingCart },
+    { href: '/support/tickets', label: 'Support', icon: LifeBuoy },
   ];
 
   return (

@@ -231,3 +231,16 @@ export type UXMetrics = {
   aiPersonalizationScore: number; // 0-100 engagement rating
   recordedAt: Timestamp;
 };
+
+// Represents a support ticket.
+// Firestore Collection: /tickets
+export type Ticket = {
+  id: string;
+  subject: string;
+  description: string;
+  priority: 'high' | 'medium' | 'low';
+  status: 'open' | 'in-progress' | 'closed';
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+  userId: string;
+};
