@@ -2,57 +2,70 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Default to locked down
-    match /{document=**} {
-      allow read, write: if false;
-    }
 
-    // Allow admins to read/write all collections
-    match /{document=**} {
-        allow read, write: if request.auth.token.admin == true;
-    }
-
+    // E-commerce Product and Order Rules
     match /products/{productId} {
       allow read: if true;
+      allow write: if request.auth.token.admin == true;
     }
 
     match /orders/{orderId} {
-      allow read, create: if request.auth.uid == request.resource.data.userId;
-      allow update: if request.auth.uid == resource.data.userId;
+      allow read, update: if request.auth.uid == resource.data.userId;
+      allow create: if request.auth.uid == request.resource.data.userId;
+      allow list: if request.auth.token.admin == true;
     }
 
+    // New Product Reviews Rules
+    match /product_reviews/{reviewId} {
+      allow read: if true;
+      allow create: if 
+        request.auth != null &&
+        // Validate that the user ID in the new review document matches the authenticated user
+        request.resource.data.userId == request.auth.uid &&
+        // Validate the rating is between 1 and 5
+        request.resource.data.rating >= 1 && request.resource.data.rating <= 5 &&
+        // Check if the user has actually purchased the product they are reviewing
+        exists(
+          /databases/$(database)/documents/orders/$(request.resource.data.orderId)
+        ) &&
+        get(
+          /databases/$(database)/documents/orders/$(request.resource.data.orderId)
+        ).data.userId == request.auth.uid &&
+        get(
+          /databases/$(database)/documents/orders/$(request.resource.data.orderId)
+        ).data.items.hasAny([request.resource.data.productId])
+      ;
+      allow update, delete: if request.auth.uid == resource.data.userId;
+    }
+    
+    // User Profile Rules
     match /users/{userId} {
       allow read: if true;
       allow create: if request.auth.uid == userId;
-      allow update: if request.auth.uid == userId;
+      allow update: if request.auth.uid == userId || request.auth.token.admin == true;
+      allow delete: if request.auth.token.admin == true;
+
+      // Allow admins to manage any user's profile
+      match /{document=**} {
+        allow read, write: if request.auth.token.admin == true;
+      }
     }
 
-    // Rules for chat collection
-    match /chat/{messageId} {
-      allow read: if request.auth != null;
-      allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
-    }
-
-    // Rules for blog posts
-    match /posts/{postId} {
-      allow read: if true;
-    }
-
+    // AI & UX Configuration Rules
     match /ai_models/{modelId} {
       allow read: if true;
-    }
-
-    match /ai_training_feedback/{feedbackId} {
-        allow create: if request.auth != null;
+      allow write: if request.auth.token.admin == true;
     }
 
     match /ai_decision_logs/{logId} {
-        allow create: if request.auth.token.admin == true; // Or some service account
+      // Only admins can read/write logs for security and auditing
+      allow read, write: if request.auth.token.admin == true;
     }
-    
+
     match /ux_config/{configId} {
-        allow read: if true;
-        allow write: if request.auth.token.admin == true;
+      allow read: if true;
+      // Only admins can change global UX settings
+      allow write: if request.auth.token.admin == true;
     }
 
     match /ui_components/{componentId} {
@@ -62,7 +75,36 @@ service cloud.firestore {
 
     match /user_preferences/{userId} {
         allow read, update: if request.auth.uid == userId;
-        allow create: if request.auth != null;
+        allow create: if request.auth.uid == userId;
+    }
+
+    match /ux_metrics/{metricId} {
+        // Anyone can write (client-side analytics), but only admins can read
+        allow create: if true;
+        allow read, update, delete: if request.auth.token.admin == true;
+    }
+
+    match /admin_ux_controls/{controlId} {
+        allow read: if true;
+        allow write: if request.auth.token.admin == true;
+    }
+
+    // Real-time Chat Collection
+    match /chat/{messageId} {
+      allow read: if true;
+      allow create: if request.auth != null;
+    }
+    
+    // Blog Posts Collection
+    match /posts/{postId} {
+      allow read: if true;
+      allow write: if request.auth.token.admin == true;
+    }
+    
+    // Subscribers Collection
+    match /subscribers/{subscriberId} {
+      allow read, write: if request.auth.token.admin == true;
+      allow create: if request.auth != null;
     }
   }
 }
