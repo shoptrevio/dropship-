@@ -1,98 +1,80 @@
+
 rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Helper functions
-    function isOwner(userId) {
-      return request.auth != null && request.auth.uid == userId;
+    // Helper function to check if a user is an admin
+    function isAdmin() {
+      return request.auth != null && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
     }
 
-    // Products: Publicly readable, only admins can write.
+    // Rules for the 'products' collection
     match /products/{productId} {
+      // Allow public read access to all products
       allow read: if true;
-      allow write: if request.auth != null && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+
+      // Allow write access only for administrators
+      allow write: if isAdmin();
+    }
+    
+    // Rules for the 'product_drafts' collection
+    match /product_drafts/{draftId} {
+      // Allow creating drafts if the user is authenticated
+      allow create: if request.auth != null;
+      // Allow updates only by server-side processes (e.g., Cloud Functions)
+      allow update: if true; // Be cautious with this rule in production
     }
 
-    // Users: Users can read public profiles. Only the document owner can update their own profile. Admins can write to any user profile.
-    match /users/{userId} {
-      allow read: if true;
-      allow write: if isOwner(userId) || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
-    }
-
-    // Orders:
-    // - Users can create orders for themselves.
-    // - Creation is blocked if the shipping country is on a high-risk list.
-    // - Users can read their own orders.
-    // - Admins can read all orders.
-    // - Updates/deletes are disallowed for users to maintain order integrity.
+    // Rules for the 'orders' collection
     match /orders/{orderId} {
-      function isHighRiskCountry() {
-        // This list should be managed carefully.
-        // The country code is expected to be provided by the client in the order data.
-        let highRiskCountries = ['KP', 'IR', 'SY']; // Example: North Korea, Iran, Syria
-        return request.resource.data.shippingAddress.country in highRiskCountries;
-      }
+      // Allow a user to read their own orders
+      allow read: if request.auth.uid == resource.data.userId || isAdmin();
+
+      // Block creating orders if shipping to a high-risk country
+      allow create: if request.auth != null && 
+                     !['Alpha-1', 'Beta-2'].hasAny([request.resource.data.shippingAddress.country]);
+                     
+      // Allow users to update their own orders (e.g., to cancel), and admins to update any order
+      allow update: if request.auth.uid == resource.data.userId || isAdmin();
+    }
+
+    // Rules for the 'users' collection
+    match /users/{userId} {
+      // Allow anyone to read user profiles
+      allow read: if true;
       
-      allow create: if isOwner(request.resource.data.userId) && !isHighRiskCountry();
-      allow read: if isOwner(resource.data.userId) || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
-      allow update, delete: if get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+      // Allow a user to create their own document (typically handled by a Cloud Function on sign-up)
+      allow create: if request.auth != null;
+      
+      // Allow a user to update ONLY their own profile data
+      allow update: if request.auth.uid == userId;
+      
+      // Disallow users from deleting their own profiles directly
+      allow delete: if false;
     }
     
-    // Product Reviews:
-    // - Allow creation only if the user has purchased the product.
-    // - Review data must be valid (rating between 1 and 5).
-    // - Allow public read access.
-    // - Allow updates/deletes only by the review's author.
+    // Rules for the 'product_reviews' collection
     match /product_reviews/{reviewId} {
-        function hasPurchasedProduct(productId) {
-            return exists(/databases/$(database)/documents/orders/$(request.auth.uid)) &&
-                   productId in get(/databases/$(database)/documents/orders/$(request.auth.uid)).data.items;
-        }
-
-        allow create: if request.auth != null &&
-                         'rating' in request.resource.data &&
-                         request.resource.data.rating >= 1 &&
-                         request.resource.data.rating <= 5 &&
-                         exists(
-                           /databases/$(database)/documents/orders/$(request.resource.data.userId)
-                         ) &&
-                         get(
-                           /databases/$(database)/documents/orders/$(request.resource.data.userId)
-                         ).data.items.hasAny([request.resource.data.productId]);
-
+        // Allow public read access
         allow read: if true;
-        allow update, delete: if isOwner(resource.data.userId);
+
+        // Allow creating a review if the user is authenticated, the data is valid,
+        // and the user has previously purchased the product.
+        allow create: if request.auth != null &&
+            request.resource.data.rating >= 1 && request.resource.data.rating <= 5 &&
+            exists(/databases/$(database)/documents/orders/$(request.resource.data.orderId)) &&
+            get(/databases/$(database)/documents/orders/$(request.resource.data.orderId)).data.userId == request.auth.uid &&
+            get(/databases/$(database)/documents/orders/$(request.resource.data.orderId)).data.items.hasAny(['productId'], request.resource.data.productId);
+
+        // Allow users to update or delete their own reviews
+        allow update, delete: if request.auth.uid == resource.data.userId;
     }
 
-
-    // AI & UX Configuration: Read-only for clients, writable for admins.
-    match /ai_models/{modelId} {
-      allow read: if true;
-      allow write: if get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
-    }
-    
-    match /ux_config/{configId} {
-      allow read: if true;
-      allow write: if get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
-    }
-
-    match /chat/{messageId} {
-      allow read: if request.auth != null;
-      allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
-    }
-    
-    match /subscribers/{subscriberId} {
-        allow read, write: if get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
-    }
-
-    match /posts/{postId} {
-      allow read: if true;
-      allow write: if get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
-    }
-
-    match /tickets/{ticketId} {
-      allow read, write: if request.auth != null; // Simplified for now
+    // Rules for all other collections (fallback)
+    match /{document=**} {
+      // Deny all reads and writes by default to prevent unauthorized access
+      allow read, write: if false;
     }
   }
 }

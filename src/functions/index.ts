@@ -14,6 +14,29 @@ const visionClient = new vision.ImageAnnotatorClient();
 
 
 /**
+ * A Firebase Function that triggers when a new user signs up.
+ * It creates a corresponding user document in Firestore.
+ */
+exports.createNewUserDocument = functions.auth.user().onCreate(async (user) => {
+  const { uid, email, displayName } = user;
+  const userRef = db.collection('users').doc(uid);
+
+  try {
+    await userRef.set({
+      email: email || '',
+      displayName: displayName || '',
+      role: 'customer', // Default role
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+    console.log(`Successfully created user document for ${uid}`);
+  } catch (error) {
+    console.error(`Error creating user document for ${uid}:`, error);
+  }
+  return null;
+});
+
+
+/**
  * A Firebase Function that triggers when a new document is added to the 'product_drafts' collection.
  * It calls the Genkit AI flow to generate a product description and saves it back to the draft document.
  */
