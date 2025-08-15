@@ -3,9 +3,13 @@ import * as admin from 'firebase-admin';
 import * as functions from 'firebase-functions';
 import fetch from 'node-fetch';
 import { generateProductDescription, GenerateProductDescriptionInput } from '@/ai/flows/generate-product-description';
+import {Translate} from '@google-cloud/translate/build/src/v2';
+
 
 admin.initializeApp();
 const db = admin.firestore();
+const translate = new Translate();
+
 
 /**
  * A Firebase Function that triggers when a new document is added to the 'product_drafts' collection.
@@ -265,4 +269,43 @@ exports.awardLoyaltyPoints = functions.firestore
     }
     
     return null;
+  });
+
+/**
+ * A Firebase Function that automatically translates product names to Spanish.
+ * It triggers when a product's name is created or updated.
+ */
+exports.translateProductName = functions.firestore
+  .document('products/{productId}')
+  .onWrite(async (change, context) => {
+    const dataAfter = change.after.data();
+    // If document is deleted, do nothing
+    if (!dataAfter) {
+      return null;
+    }
+
+    const englishName = dataAfter.name;
+    const spanishName = dataAfter.name_es;
+
+    // Check if the name has changed and a Spanish translation doesn't already exist
+    // Or if the English name exists but the Spanish one doesn't
+    const needsTranslation = !change.before.exists || (change.before.data().name !== englishName) || !spanishName;
+
+    if (!englishName || !needsTranslation) {
+      console.log('No new English name to translate, or Spanish name already exists. Skipping.');
+      return null;
+    }
+
+    try {
+      console.log(`Translating "${englishName}" to Spanish.`);
+      const [translation] = await translate.translate(englishName, 'es');
+      console.log(`Translated name: ${translation}`);
+
+      return change.after.ref.update({
+        name_es: translation,
+      });
+    } catch (error) {
+      console.error('Error translating product name:', error);
+      throw new functions.https.HttpsError('internal', 'Failed to translate product name.');
+    }
   });

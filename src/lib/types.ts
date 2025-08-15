@@ -26,6 +26,7 @@ export type RegionalPrice = {
 export type Product = {
   id: string; // Document ID
   name: string;
+  name_es?: string; // Spanish translation of the product name
   description: string;
   price: number; // Default price in USD
   regionalPrices?: RegionalPrice[];
