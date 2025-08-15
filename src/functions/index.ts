@@ -482,3 +482,76 @@ exports.analyzeProductImage = functions.storage.object().onFinalize(async (objec
     throw new functions.https.HttpsError('internal', 'Failed to analyze image.');
   }
 });
+
+
+/**
+ * A Firebase Function that triggers when an order's status changes to 'shipped'.
+ * It sends a notification email to the customer using SendGrid.
+ */
+exports.sendShippingNotification = functions.firestore
+  .document('orders/{orderId}')
+  .onUpdate(async (change, context) => {
+    const orderDataAfter = change.after.data();
+    const orderDataBefore = change.before.data();
+    const orderId = context.params.orderId;
+
+    // Check if the status has just been changed to 'shipped'
+    if (orderDataBefore.status !== 'shipped' && orderDataAfter.status === 'shipped') {
+      const userId = orderDataAfter.userId;
+      
+      const userRef = db.collection('users').doc(userId);
+      const userDoc = await userRef.get();
+      
+      if (!userDoc.exists) {
+        console.error(`User ${userId} not found. Cannot send shipping email for order ${orderId}.`);
+        return null;
+      }
+      
+      const user = userDoc.data();
+      const userEmail = user?.email;
+
+      if (!userEmail) {
+        console.error(`User ${userId} does not have an email address. Cannot send shipping email.`);
+        return null;
+      }
+      
+      const sendgridApiKey = functions.config().sendgrid?.key;
+      if (!sendgridApiKey) {
+        console.error('SendGrid API key not configured. Cannot send email.');
+        return null;
+      }
+
+      const emailData = {
+        personalizations: [{ to: [{ email: userEmail }] }],
+        from: { email: 'shipping@your-app-name.com', name: 'CommerceAI Shipping' },
+        subject: `Your order #${orderId} has shipped!`,
+        content: [{
+          type: 'text/html',
+          value: `<h1>Great News!</h1><p>Your order #${orderId} is on its way. You can track it using the tracking number: ${orderDataAfter.tracking?.trackingNumber || 'Not available'}.</p>`,
+        }],
+      };
+      
+      try {
+        const response = await fetch('https://api.sendgrid.com/v3/mail/send', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${sendgridApiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(emailData),
+        });
+
+        if (response.ok) {
+          console.log(`Shipping notification sent successfully to ${userEmail} for order ${orderId}.`);
+        } else {
+          const errorBody = await response.json();
+          console.error(`Failed to send shipping email for order ${orderId}. Status: ${response.status}`, errorBody);
+        }
+      } catch (error) {
+        console.error(`Error sending shipping notification for order ${orderId}:`, error);
+        throw new functions.https.HttpsError('internal', 'Failed to send shipping email.');
+      }
+    }
+
+    return null;
+  });
