@@ -1,81 +1,68 @@
-
 rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    
-    // Helper function to check if a user has a specific role.
-    function isRole(role) {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == role;
-    }
-    
-    // Helper function to check if a user is an admin or a UX tester.
-    function isAdminOrTester() {
-      let userRole = get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
-      return userRole == 'admin' || userRole == 'ux-tester';
+    // Default to locked down
+    match /{document=**} {
+      allow read, write: if false;
     }
 
-    // Products are publicly readable, but only writable by admins.
+    // Allow admins to read/write all collections
+    match /{document=**} {
+        allow read, write: if request.auth.token.admin == true;
+    }
+
     match /products/{productId} {
       allow read: if true;
-      allow write: if isRole('admin');
     }
 
-    // Users can read/write their own data. Admins can read anyone's data.
-    match /users/{userId} {
-      allow get, update: if request.auth.uid == userId;
-      allow read: if isRole('admin');
-    }
-
-    // Orders can only be read/written by the user who owns them or by an admin.
     match /orders/{orderId} {
-      allow read, write: if get(/databases/$(database)/documents/orders/$(orderId)).data.userId == request.auth.uid || isRole('admin');
+      allow read, create: if request.auth.uid == request.resource.data.userId;
+      allow update: if request.auth.uid == resource.data.userId;
     }
 
-    // AI Models configuration is read-only for authenticated users, writable only by admins.
-    match /ai_models/{modelId} {
-      allow get: if request.auth != null;
-      allow write: if isRole('admin');
+    match /users/{userId} {
+      allow read: if true;
+      allow create: if request.auth.uid == userId;
+      allow update: if request.auth.uid == userId;
     }
-    
-    // AI training feedback can be written by any authenticated user, but only read by admins/testers.
+
+    // Rules for chat collection
+    match /chat/{messageId} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
+    }
+
+    // Rules for blog posts
+    match /posts/{postId} {
+      allow read: if true;
+    }
+
+    match /ai_models/{modelId} {
+      allow read: if true;
+    }
+
     match /ai_training_feedback/{feedbackId} {
         allow create: if request.auth != null;
-        allow read: if isAdminOrTester();
     }
-    
-    // AI decision logs are only writable by the system (via admin/backend functions) and readable by admins.
+
     match /ai_decision_logs/{logId} {
-        allow read, write: if isRole('admin');
+        allow create: if request.auth.token.admin == true; // Or some service account
+    }
+    
+    match /ux_config/{configId} {
+        allow read: if true;
+        allow write: if request.auth.token.admin == true;
     }
 
-    // Global UX configuration is publicly readable, but only writable by admins.
-    match /ux_config/{docId} {
-      allow read: if true;
-      allow write: if isRole('admin');
-    }
-    
-    // User-specific preferences can be created, read, and updated by the owner.
-    match /user_preferences/{userId} {
-      allow get, update: if request.auth.uid == userId;
-      allow create: if request.auth != null;
-    }
-    
-    // UI components configuration is publicly readable for A/B testing, writable by admins.
     match /ui_components/{componentId} {
-      allow read: if true;
-      allow write: if isRole('admin');
+        allow read: if true;
+        allow write: if request.auth.token.admin == true;
     }
 
-    // Admin UX controls are only accessible by admins.
-    match /admin_ux_controls/{controlId} {
-      allow read, write: if isRole('admin');
-    }
-
-    // UX metrics can be written by any authenticated user to their own document. Readable by admins/testers.
-    match /ux_metrics/{metricId} {
-      allow write: if request.auth.uid == metricId;
-      allow read: if isAdminOrTester();
+    match /user_preferences/{userId} {
+        allow read, update: if request.auth.uid == userId;
+        allow create: if request.auth != null;
     }
   }
 }
