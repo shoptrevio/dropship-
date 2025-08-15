@@ -261,3 +261,13 @@ export type Ticket = {
   updatedAt: Timestamp;
   userId: string;
 };
+
+// Represents a single sales transaction.
+// Firestore Collection: /transactions
+export type Transaction = {
+  id: string;
+  amount: number;
+  createdAt: Timestamp;
+  productId: string;
+  userId: string;
+};

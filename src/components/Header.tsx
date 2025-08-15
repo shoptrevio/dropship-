@@ -2,7 +2,7 @@
 'use client';
 
 import Link from 'next/link';
-import { Bot, Home, PackagePlus, ShoppingCart, Store, LifeBuoy } from 'lucide-react';
+import { Bot, Home, PackagePlus, ShoppingCart, Store, LifeBuoy, LayoutDashboard } from 'lucide-react';
 import { Button } from './ui/button';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
@@ -12,6 +12,7 @@ export function Header() {
 
   const navLinks = [
     { href: '/', label: 'Home', icon: Home },
+    { href: '/admin/dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { href: '/admin/add-product', label: 'Add Product', icon: PackagePlus },
     { href: '/checkout', label: 'Checkout', icon: ShoppingCart },
     { href: '/support/tickets', label: 'Support', icon: LifeBuoy },
