@@ -1,12 +1,25 @@
+'use client';
+
+import { useAuthState } from 'react-firebase-hooks/auth';
+import { useCollection } from 'react-firebase-hooks/firestore';
+import { collection, query, where } from 'firebase/firestore';
+import { auth, db } from '@/lib/firebase';
 import { ProductCard } from '@/components/ProductCard';
-import { products } from '@/lib/placeholder-data';
-import type { Product } from '@/lib/types';
+import { Product } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import Link from 'next/link';
 import Image from 'next/image';
 import { ArrowRight, ShoppingCart } from 'lucide-react';
+import { Skeleton } from '@/components/ui/skeleton';
 
 export default function Home() {
+  const [user] = useAuthState(auth);
+  const [productsSnapshot, loading] = useCollection(
+    query(collection(db, 'products'), where('status', '==', 'active'))
+  );
+
+  const products = productsSnapshot?.docs.map(doc => ({ id: doc.id, ...doc.data() } as Product));
+
   return (
     <div className="bg-background">
       {/* Hero Section */}
@@ -56,11 +69,25 @@ export default function Home() {
           </p>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
-          {products.map((product: Product) => (
-            <ProductCard key={product.id} product={product} />
-          ))}
-        </div>
+        {loading ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
+            {[...Array(8)].map((_, i) => (
+              <div key={i} className="flex flex-col space-y-3">
+                <Skeleton className="h-[250px] w-full rounded-xl" />
+                <div className="space-y-2">
+                  <Skeleton className="h-4 w-[250px]" />
+                  <Skeleton className="h-4 w-[200px]" />
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
+            {products?.map((product: Product) => (
+              <ProductCard key={product.id} product={product} userId={user?.uid} />
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );

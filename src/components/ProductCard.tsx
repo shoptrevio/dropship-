@@ -7,9 +7,10 @@ import { ArrowRight } from 'lucide-react';
 
 interface ProductCardProps {
   product: Product;
+  userId?: string;
 }
 
-export function ProductCard({ product }: ProductCardProps) {
+export function ProductCard({ product, userId }: ProductCardProps) {
   return (
     <Card className="flex flex-col overflow-hidden shadow-lg hover:shadow-xl transition-shadow duration-300 ease-in-out">
       <CardHeader className="p-0">
