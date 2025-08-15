@@ -555,3 +555,48 @@ exports.sendShippingNotification = functions.firestore
 
     return null;
   });
+
+/**
+ * A callable Firebase Function for admin users to fetch aggregated daily sales data.
+ * It checks for an 'admin' custom claim before executing.
+ */
+exports.getDailySalesStats = functions.https.onCall(async (data, context) => {
+  // 1. Check for admin privileges.
+  if (context.auth?.token.role !== 'admin') {
+    throw new functions.https.HttpsError(
+      'permission-denied',
+      'This function can only be called by admin users.'
+    );
+  }
+
+  // 2. Query transactions from the last 30 days.
+  const thirtyDaysAgo = new Date();
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+  const thirtyDaysAgoTimestamp = admin.firestore.Timestamp.fromDate(thirtyDaysAgo);
+
+  const transactionsRef = db.collection('transactions');
+  const query = transactionsRef.where('createdAt', '>=', thirtyDaysAgoTimestamp);
+
+  const snapshot = await query.get();
+
+  if (snapshot.empty) {
+    return {};
+  }
+
+  // 3. Aggregate data by day.
+  const salesByDay: { [key: string]: number } = {};
+
+  snapshot.forEach(doc => {
+    const transaction = doc.data();
+    const date = transaction.createdAt.toDate().toISOString().split('T')[0]; // YYYY-MM-DD
+    
+    if (salesByDay[date]) {
+      salesByDay[date] += transaction.amount;
+    } else {
+      salesByDay[date] = transaction.amount;
+    }
+  });
+
+  // 4. Return the aggregated data.
+  return salesByDay;
+});
