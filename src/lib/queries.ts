@@ -1,3 +1,4 @@
+
 'use server';
 
 import { app } from '@/lib/firebase';
@@ -11,6 +12,52 @@ import {
   getDocs,
 } from 'firebase/firestore';
 import type { Product } from './types';
+
+/**
+ * Fetches a list of active products from the 'products' collection.
+ * This query is intended for customer-facing views.
+ * 
+ * Note: This server-side function is where you would strip out sensitive
+ * fields before sending the data to the client, as Firestore security rules
+ * cannot hide fields on read operations.
+ * 
+ * @returns {Promise<Product[]>} A promise that resolves to an array of product documents.
+ * @throws {Error} Throws an error if the query fails to execute.
+ */
+export async function fetchActiveProducts(): Promise<Product[]> {
+  try {
+    const db = getFirestore(app);
+    const productsRef = collection(db, 'products');
+    
+    const q = query(
+      productsRef,
+      where('status', '==', 'active')
+    );
+    
+    const snapshot = await getDocs(q);
+    
+    if (snapshot.empty) {
+      console.log('No active products found.');
+      return [];
+    }
+
+    const products: Product[] = [];
+    snapshot.forEach(doc => {
+      const productData = doc.data();
+      // This is where you would strip out sensitive data.
+      // For example, delete productData.costPrice;
+      products.push({ id: doc.id, ...productData } as Product);
+    });
+    
+    console.log('Fetched active products:', products);
+    return products;
+
+  } catch (error) {
+    console.error('Error fetching active products:', error);
+    throw new Error('Failed to fetch active products.');
+  }
+}
+
 
 /**
  * Fetches a list of premium products from the 'products' collection.
