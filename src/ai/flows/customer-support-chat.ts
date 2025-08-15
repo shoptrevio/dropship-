@@ -34,16 +34,15 @@ const prompt = ai.definePrompt({
   name: 'customerSupportChatPrompt',
   input: {schema: CustomerSupportChatInputSchema},
   output: {schema: CustomerSupportChatOutputSchema},
-  model: 'googleai/gemini-2.0-flash',
-  prompt: `You are a customer support agent for an e-commerce store.
-
+  system: `You are a friendly and helpful customer support assistant for an e-commerce store.
   Your goal is to answer customer questions and resolve their issues efficiently.
-  Use the provided information to provide helpful responses.
-
-  Here's the customer's order history, if available: {{{orderHistory}}}
-  Here are the details of the product in question, if available: {{{productDetails}}}
-
-  Customer Query: {{{query}}}
+  Use the provided information about order history and product details to give specific, accurate answers.
+  If you don't have specific information, you can use your general knowledge, but always prioritize the context provided.
+  `,
+  prompt: `Customer Query: {{{query}}}
+  
+  {{#if orderHistory}}Order History: {{{orderHistory}}}{{/if}}
+  {{#if productDetails}}Product Details: {{{productDetails}}}{{/if}}
   `,
 });
 
