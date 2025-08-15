@@ -1,77 +1,64 @@
+
 rules_version = '2';
+
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Helper function to check for admin role
+    // --- Helper Functions ---
     function isAdmin() {
-      return request.auth.token.role == 'admin';
+      return request.auth != null && request.auth.token.role == 'admin';
     }
 
-    // Function to check if the user is the owner of the document
     function isOwner(userId) {
-      return request.auth.uid == userId;
+      return request.auth != null && request.auth.uid == userId;
     }
     
-    // Function to check if a user has purchased a specific product
-    function hasPurchased(productId) {
-      return exists(/databases/$(database)/documents/users/$(request.auth.uid)/orders, {
-        productId: productId,
-        status: 'delivered' // or whatever status indicates a completed purchase
-      });
+    function isNewOrderOwner(order) {
+        return request.auth != null && order.userId == request.auth.uid;
     }
 
-    // Rules for the 'users' collection
-    match /users/{userId} {
-      // Allow user creation for anyone (typically done via a Cloud Function on signup)
-      allow create: if true;
-      // Anyone can read user profiles (if they are public)
-      allow read: if true;
-      // Only the user themselves or an admin can update their own profile
-      allow update: if isOwner(userId) || isAdmin();
-      // Deleting users should be a privileged action, restricted to admins
-      allow delete: if isAdmin();
-    }
+    // --- Collections ---
 
-    // Rules for the 'products' collection
+    // Products: Admins can manage fully. Customers can only read active products.
     match /products/{productId} {
-      // Customers can only read products that are 'active'
       allow read: if resource.data.status == 'active';
-      // Admins can create, update, and delete any product
       allow write: if isAdmin();
     }
     
-    // Rules for product reviews
-    match /products/{productId}/reviews/{reviewId} {
-        allow read: if true;
-        // Only allow review creation if the user has purchased the product.
-        allow create: if hasPurchased(productId);
-    }
-    
-    // Rules for the 'product_drafts' collection
-    match /product_drafts/{draftId} {
-      // Allow authenticated users to create drafts
-      allow create: if request.auth != null;
-      // Only allow admins or the creator to read/update (functions need broader access)
-      allow read, update: if isAdmin() || isOwner(request.resource.data.userId);
+    // Product Reviews: Only authenticated users who have purchased the product can write a review.
+    // This relies on an 'orders' collection where purchases are recorded.
+    match /product_reviews/{reviewId} {
+      allow create: if request.auth != null && exists(/databases/$(database)/documents/orders/$(request.resource.data.orderId)) && get(/databases/$(database)/documents/orders/$(request.resource.data.orderId)).data.userId == request.auth.uid;
+      allow read;
     }
 
-    // Rules for the 'orders' collection
+    // Users: Admins can manage fully. Customers can read/update their own profile.
+    match /users/{userId} {
+      allow read, update: if isOwner(userId) || isAdmin();
+      allow create: if request.auth != null; // Allows for user profile creation on signup
+      allow delete: if isAdmin();
+    }
+
+    // Orders: Admins can manage fully. Customers can create and manage their own orders.
     match /orders/{orderId} {
-      // Users can only create orders for themselves
-      allow create: if isOwner(request.resource.data.userId);
-      // Users can only read their own orders. Admins can read any order.
-      allow read: if isOwner(resource.data.userId) || isAdmin();
-      // Users can update their own orders if status is 'pending', admins can always update
-      allow update: if (isOwner(resource.data.userId) && resource.data.status == 'pending') || isAdmin();
-       // Only admins can delete orders
+      allow read, update: if isOwner(resource.data.userId) || isAdmin();
+      allow create: if isNewOrderOwner(request.resource.data);
       allow delete: if isAdmin();
     }
     
+    // Transactions: All client-side access is denied. Access should be through trusted Cloud Functions.
     match /transactions/{transactionId} {
-      // Deny all direct client-side reads. Data should be fetched via callable function.
-      allow read: if false; 
-      // Allow transactions to be created (e.g., from a secure backend or another function)
-      allow write: if isAdmin();
+      allow read, write: if false;
+    }
+    
+    // Admin Users: Only admins can read/write to the list of admins.
+    match /admin_users/{email} {
+        allow read, write: if isAdmin();
+    }
+    
+    // Product Drafts: Only admins can manage product drafts.
+    match /product_drafts/{draftId} {
+        allow read, write: if isAdmin();
     }
   }
 }
