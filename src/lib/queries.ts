@@ -13,25 +13,22 @@ import {
 import type { Product } from './types';
 
 /**
- * Fetches a list of featured products from the 'products' collection.
+ * Fetches a list of premium products from the 'products' collection.
  * 
  * This query retrieves products where:
- * - The price is greater than 100.
- * - The category is either 'electronics' or 'gadgets'.
- * - The results are ordered by creation date in descending order.
- * - The query is limited to a maximum of 10 documents.
+ * - 'price' is greater than 100
+ * - 'category' is either 'electronics' or 'gadgets'
+ * - Results are ordered by 'createdAt' in descending order
+ * - Limit the results to 10 documents
  * 
  * @returns {Promise<Product[]>} A promise that resolves to an array of product documents.
  * @throws {Error} Throws an error if the query fails to execute.
  */
-export async function getFeaturedProducts(): Promise<Product[]> {
+export async function fetchPremiumProducts(): Promise<Product[]> {
   try {
     const db = getFirestore(app);
     const productsRef = collection(db, 'products');
-
-    // Note: To use the 'in' operator in a compound query, you will need to create a
-    // composite index in your Firestore console. The index would be for:
-    // `products`: `price` (Ascending), `category` (Ascending), `createdAt` (Descending)
+    
     const q = query(
       productsRef,
       where('price', '>', 100),
@@ -39,24 +36,24 @@ export async function getFeaturedProducts(): Promise<Product[]> {
       orderBy('createdAt', 'desc'),
       limit(10)
     );
-
-    const querySnapshot = await getDocs(q);
     
-    if (querySnapshot.empty) {
+    const snapshot = await getDocs(q);
+    
+    if (snapshot.empty) {
       console.log('No matching products found.');
       return [];
     }
 
     const products: Product[] = [];
-    querySnapshot.forEach((doc) => {
-      // It's a good practice to cast the document data to your defined type.
+    snapshot.forEach(doc => {
       products.push({ id: doc.id, ...doc.data() } as Product);
     });
-
+    
+    console.log('Fetched products:', products);
     return products;
+
   } catch (error) {
-    console.error('Error fetching featured products:', error);
-    // Re-throw the error or handle it as needed for your application.
-    throw new Error('Failed to fetch featured products.');
+    console.error('Error fetching products:', error);
+    throw new Error('Failed to fetch premium products.');
   }
 }
