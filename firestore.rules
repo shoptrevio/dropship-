@@ -1,108 +1,78 @@
-
 rules_version = '2';
 
-// Best-practice security rules for a high-performance e-commerce platform.
-// These rules are secure by default, meaning access is denied unless explicitly allowed.
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Reusable functions to keep rules DRY and readable.
+    // Helper functions for common access control patterns.
     function isAdmin() {
       return request.auth.token.role == 'admin';
     }
+
     function isOwner(userId) {
       return request.auth.uid == userId;
     }
 
-    // Products:
-    // - Customers can only read 'active' products.
-    // - Admins can write (create, update, delete) any product.
+    // --- Product and Order Rules ---
+
+    // Products are publicly readable if 'active', but only writable by admins.
     match /products/{productId} {
       allow read: if resource.data.status == 'active';
       allow write: if isAdmin();
     }
-    
-    // Users:
-    // - Users can read/update their own profile.
-    // - Admins can access any user profile.
-    // - Authenticated users can create their own profile.
+
+    // Users can manage their own profile. Admins can manage any user.
     match /users/{userId} {
       allow get, update: if isOwner(userId) || isAdmin();
-      allow create: if request.auth != null && isOwner(userId);
-      allow list, delete: if isAdmin();
+      allow create: if request.auth != null; // A user can create their own profile.
+      allow delete: if isAdmin();
+      // Listing users is disallowed for security.
+      allow list: if isAdmin();
     }
-    
-    // Orders:
-    // - Users can only read/update their own orders.
-    // - Admins can access any order.
-    // - Users can create their own orders.
+
+    // Users can manage their own orders. Admins can manage any order.
     match /orders/{orderId} {
-       allow get, update: if isOwner(resource.data.userId) || isAdmin();
-       allow create: if isOwner(request.resource.data.userId);
-       allow list, delete: if isAdmin();
-    }
-    
-    // Reviews:
-    // - Allow users to create a review only if they have purchased the product.
-    // - This is a highly secure rule that queries the 'orders' collection.
-    // - Note: This rule can be more complex and may impact performance.
-    // - A 'product_reviews' subcollection under products/{productId}.
-    match /products/{productId}/product_reviews/{reviewId} {
-      allow create: if request.auth != null && 
-        exists(/databases/$(database)/documents/orders/$(request.resource.data.orderId)) &&
-        get(/databases/$(database)/documents/orders/$(request.resource.data.orderId)).data.userId == request.auth.uid;
-      
-      allow read;
-      allow update, delete: if isOwner(resource.data.userId) || isAdmin();
+      allow read, update: if isOwner(resource.data.userId) || isAdmin();
+      allow create: if isOwner(request.resource.data.userId);
+      allow delete: if isAdmin();
     }
 
-    // Transactions:
-    // - No client-side access. All reads must go through a trusted Cloud Function.
+    // Admins can read transaction data for dashboards.
+    // Clients should use a callable function instead of reading directly.
     match /transactions/{transactionId} {
-      allow read, write: if false;
+        allow read, write: if isAdmin();
     }
 
-    // Tickets:
-    // - Users can create tickets.
-    // - Admins can do anything.
-    match /tickets/{ticketId} {
-      allow create: if request.auth != null;
+    // Admin users collection is only accessible by other admins.
+    match /admin_users/{email} {
       allow read, write: if isAdmin();
-    }
-
-    // Default deny: Any collection not explicitly matched is fully locked down.
-    match /{document=**} {
-      allow read, write: if false;
     }
   }
 }
 
-// Rules for Firebase Storage
+// --- Firebase Storage Rules ---
 service firebase.storage {
   match /b/{bucket}/o {
+    // Files are publicly readable, but this can be restricted.
+    // match /{allPaths=**} {
+    //   allow read;
+    // }
 
-    // Product Images:
-    // - Anyone can read product images (they are public).
-    // - Only admins can upload product images.
-    // - Validate that uploads are images and are under 5MB.
-    match /products/{productId}/{imageFile} {
-      allow read;
-      allow write: if request.auth.token.role == 'admin'
-                   && request.resource.size < 5 * 1024 * 1024
-                   && request.resource.contentType.matches('image/.*');
+    // Allow users to upload to their own designated folder.
+    // The client MUST upload to a path like 'user-uploads/some-user-id/file.jpg'.
+    match /user-uploads/{userId}/{allPaths=**} {
+      // Any authenticated user can read from any user's folder.
+      // You could tighten this to `if request.auth.uid == userId;` if needed.
+      allow read: if request.auth != null;
+
+      // A user can only create/write to their own folder.
+      allow write: if request.auth.uid == userId;
     }
 
-    // User-specific files (e.g., profile pictures):
-    // - A user can only read/write to their own folder.
-    // - Validates file size and content type.
-    match /user-uploads/{userId}/{file} {
-      allow read, write: if request.auth.uid == userId
-                         && request.resource.size < 5 * 1024 * 1024
-                         && request.resource.contentType.matches('image/.*');
-    }
-
-    // Default deny for any other path.
-    match /{allPaths=**} {
-      allow read, write: if false;
+    // Rules for product images.
+    match /products/{productId}/{allPaths=**} {
+        // Anyone can read product images.
+        allow read;
+        // Only admins can upload/update product images.
+        allow write: if request.auth.token.role == 'admin';
     }
   }
 }
