@@ -3,7 +3,6 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-
     // Helper functions
     function isAdmin() {
       return request.auth != null && request.auth.token.role == 'admin';
@@ -12,45 +11,71 @@ service cloud.firestore {
     function isOwner(userId) {
       return request.auth != null && request.auth.uid == userId;
     }
-    
-    // -- Collections --
 
-    // Products can be read by anyone if they are 'active', but only written by admins.
+    // Collection: products
+    // Customers can only read active products.
+    // Admins can read/write any product.
     match /products/{productId} {
-      allow read: if resource.data.status == 'active';
+      allow read: if resource.data.status == 'active' || isAdmin();
       allow write: if isAdmin();
     }
     
-    // Users can create their own profile, and can only read/update their own document. Admins can read/write any user.
+    // Collection: product_drafts
+    // Only admins should access drafts.
+    match /product_drafts/{draftId} {
+        allow read, write: if isAdmin();
+    }
+
+    // Collection: users
+    // Users can create their own profile.
+    // Users can read/update their own profile.
+    // Admins can read/write any user profile.
     match /users/{userId} {
       allow create: if isOwner(userId);
-      allow get, update: if isOwner(userId) || isAdmin();
-      allow list, delete: if isAdmin();
+      allow read, update: if isOwner(userId) || isAdmin();
+      allow delete: if isAdmin();
+    }
+    
+    // Collection: admin_users
+    // Only admins can read or write to the list of admins.
+    match /admin_users/{email} {
+      allow read, write: if isAdmin();
     }
 
-    // Orders can be created by any authenticated user for themselves. They can only be read/updated by the owner or an admin.
+    // Collection: orders
+    // Users can create their own orders.
+    // Users can read/update their own orders.
+    // Admins can read/write any order.
     match /orders/{orderId} {
       allow create: if isOwner(resource.data.userId);
-      allow get, update: if isOwner(resource.data.userId) || isAdmin();
-      allow list, delete: if isAdmin();
+      allow read, update: if isOwner(resource.data.userId) || isAdmin();
+      allow delete: if isAdmin();
     }
-
-    // Transactions can only be accessed via secure Cloud Functions. No direct client access.
+    
+    // Collection: transactions
+    // Deny all client-side access. Data should only be accessed via secure
+    // callable Cloud Functions.
     match /transactions/{transactionId} {
         allow read, write: if false;
     }
     
-    // Tickets can only be read/written by the user who created them or by an admin.
+    // Collection: tickets
+    // Authenticated users can create tickets.
+    // Admins can read/write any ticket.
     match /tickets/{ticketId} {
-      allow read, write: if isOwner(resource.data.userId) || isAdmin();
-    }
-    
-    // Admins can create other admins by adding their email to this collection. No one else can read/write here.
-    match /admin_users/{email} {
+        allow create: if request.auth != null;
         allow read, write: if isAdmin();
     }
+    
+    // Collection: chat
+    // Allow any authenticated user to read and write to the chat.
+    match /chat/{messageId} {
+      allow read, write: if request.auth != null;
+    }
 
-    // Logs collection is write-only for functions, and not readable by any client.
+    // Collection: logs
+    // Only backend services (Cloud Functions) should write to logs.
+    // No client should be able to read or write logs.
     match /logs/{logId} {
       allow read, write: if false;
     }
