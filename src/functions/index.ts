@@ -4,11 +4,13 @@ import * as functions from 'firebase-functions';
 import fetch from 'node-fetch';
 import { generateProductDescription, GenerateProductDescriptionInput } from '@/ai/flows/generate-product-description';
 import {Translate} from '@google-cloud/translate/build/src/v2';
+import * as vision from '@google-cloud/vision';
 
 
 admin.initializeApp();
 const db = admin.firestore();
 const translate = new Translate();
+const visionClient = new vision.ImageAnnotatorClient();
 
 
 /**
@@ -392,3 +394,68 @@ exports.sendAbandonedCartReminders = functions.pubsub
     console.log(`Processed ${snapshot.size} abandoned carts.`);
     return null;
   });
+
+/**
+ * A Firebase Function that triggers when an image is uploaded to Firebase Storage.
+ * It uses the Google Cloud Vision API to detect labels in the image and saves them
+ * as tags in the corresponding Firestore product document.
+ */
+exports.analyzeProductImage = functions.storage.object().onFinalize(async (object) => {
+  const filePath = object.name;
+  const contentType = object.contentType;
+  const bucketName = object.bucket;
+
+  // Exit if this is triggered on a file that is not an image.
+  if (!contentType?.startsWith('image/')) {
+    return console.log('This is not an image.');
+  }
+
+  // Exit if the image is not in a 'products' folder.
+  // This is a convention to ensure we only process product images.
+  if (!filePath?.startsWith('products/')) {
+    return console.log('This is not a product image.');
+  }
+
+  // Extract the product ID from the file path (e.g., 'products/PRODUCT_ID/image.jpg').
+  const pathParts = filePath.split('/');
+  const productId = pathParts[1];
+  if (!productId) {
+    console.log('Could not extract product ID from path.');
+    return null;
+  }
+
+  console.log(`Analyzing image for product: ${productId}`);
+
+  const gcsUri = `gs://${bucketName}/${filePath}`;
+  
+  try {
+    // Call the Vision API to detect labels
+    const [result] = await visionClient.labelDetection(gcsUri);
+    const labels = result.labelAnnotations;
+    
+    if (!labels || labels.length === 0) {
+      console.log('No labels detected for the image.');
+      return null;
+    }
+    
+    // Extract the description of each label
+    const tags = labels.map(label => label.description).filter(Boolean) as string[];
+    console.log(`Detected tags: ${tags.join(', ')}`);
+
+    // Save the tags to the Firestore document
+    const productRef = db.collection('products').doc(productId);
+    
+    await productRef.set({
+      aiGeneratedContent: {
+        visualSearchTags: tags,
+      }
+    }, { merge: true });
+
+    console.log(`Successfully saved tags for product ${productId}.`);
+    return null;
+
+  } catch (error) {
+    console.error('Error analyzing image with Vision API:', error);
+    throw new functions.https.HttpsError('internal', 'Failed to analyze image.');
+  }
+});
