@@ -48,4 +48,16 @@ jobs:
           --project ${{ vars.FIREBASE_PROJECT }} \
           --only hosting,functions \
           --token ${{ secrets.FIREBASE_TOKEN }} \
-          --non-interactive
+          --non-interactive || ( \
+            echo "Deployment failed. Retrying with debug output..." && \
+            firebase deploy \
+              --project ${{ vars.FIREBASE_PROJECT }} \
+              --only hosting,functions \
+              --token ${{ secrets.FIREBASE_TOKEN }} \
+              --non-interactive \
+              --debug > firebase-debug.log 2>&1 && \
+            echo "--- DEBUG LOG START ---" && \
+            cat firebase-debug.log && \
+            echo "--- DEBUG LOG END ---" && \
+            exit 1 \
+          )
